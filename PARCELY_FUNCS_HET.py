@@ -2550,7 +2550,7 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
         NewVelocities = DropPop[:,4:7].copy()
         NewVelocities[:,2] = OrigVertVel - TerminalVels
         
-        # DYNAMO DYNAMO HEE HIGH OREGANO
+        # Allow Droplets to move
         if DropMove == False:
             NewVelocities[:,:2] = 0
         
