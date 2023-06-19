@@ -12,7 +12,7 @@ Input/Main file to run the PARCELY model.
 # =============================================================================
 
 import numpy as np
-import DropFuncs as DF
+import PARCELY_FUNCS as DF
 import time
 
 # =============================================================================
