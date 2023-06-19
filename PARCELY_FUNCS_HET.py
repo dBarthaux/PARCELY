@@ -921,7 +921,7 @@ def GrowthRate(WetData, AmbSat, Temperature, Pressure, ac, at):
     
     # Growth rate
     GRate = (AmbSat-WetData[:,9])*((4*np.pi)**(2/3))*\
-            ((3/rhoL)**(1/3))*(WetData[:,8]**(1/3))/(Fd + Fk)
+            ((3/rhoL)**(1/3))*(WetData[:,7]**(1/3))/(Fd + Fk)
     
     return GRate
 
