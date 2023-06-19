@@ -13,7 +13,7 @@ Main file to run the Parcely model.
 # =============================================================================
 
 import numpy as np
-import DropFuncsHet as DF
+import PARCELY_FUNCS_HET as DF
 import time
 
 
@@ -31,6 +31,13 @@ BoxHeight = (Cubes**(1/3))*(1e-2)       # Height of boundary box side (m)
 # Setting a random generator seed for reproducibility
 SeedNo = 1996
 RNG = np.random.default_rng(SeedNo)
+
+# Size threshold for collision-coalescence
+SizeThreshold = 15e-6
+# Number of nearest neighbors to keep
+k = 5
+# Allow collision-coalescence
+CollCoal = True
 
 
 # =============================================================================
@@ -85,7 +92,7 @@ Modes = ['OrgFilm', 'Constant', 'MixRule', 'WaterTemp']
 # Surface tension of pure water J/m^2
 sft = 0.072
 # Selected method
-SurfMode = Modes[0]
+SurfMode = Modes[1]
 
 # Total concentration (all phases), ug/m3
 Scaling = 1
@@ -125,35 +132,36 @@ OAParameters = DF.OrganicsArray(MoMass, Concentrations, Kappas,
 # Dirichlet mass fractions for non-monotone distribution
 Dirichlet = False
 # Allow organics
-Organics = True
+Organics = False
 # Allow co-condensation
-CoCond = True
+CoCond = False
 # Allow distribution in kappa values
 KappaRand = False
 
 # Distribution type
-Distribution = 'lognormal'
+Distribution = 'mono'
 # Number concentrations
-Ns = np.array([125, 65])*Cubes
+Ns = np.array([100])*Cubes
 # Mean radii, um
-Rs = np.array([0.011, 0.060])
+Rs = np.array([0.05])
 # Standard deviations, um
-Stds = np.array([1.2, 1.7])
+Stds = np.array([1])
 # Inorganics indices from CSV
-Inorgs = np.array([[0],[0]])
+Inorgs = np.array([[0]])
 # Population percentage of each inorganic
-InorgPopPerc = np.array([[100],[100]])
+InorgPopPerc = np.array([[100]])
 # Organics in condensed phase from OAParameter table
-Orgs = [[0,1,2,3,4,5,6,7,8,9],[0,1,2,3,4,5,6,7,8,9]]
+Orgs = [[0]]
 
 # If irrelevant, set to 0
 PercCond = 0
-OrgBase = np.array([100, 100, 100, 99, 99, 90, 45, 12, 1, 0.1])
+OrgBase = np.array([])
 
-OrgMFr = RNG.dirichlet(OrgBase, 1).reshape(10)*(1-0.6)
+# OrgMFr = RNG.dirichlet(OrgBase, 1).reshape(10)*(1-0.6)
 # Solute mass fractions (inorganic + organic)
-MassFractions = [np.append(np.array([0.6]), OrgMFr), 
-                 np.append(np.array([0.6]), OrgMFr)] 
+# MassFractions = [np.append(np.array([0.6]), OrgMFr), 
+#                  np.append(np.array([0.6]), OrgMFr)] 
+MassFractions = [np.array([1]), np.array([1])]
 
 # Number of droplets
 NumberDrops = Ns.sum()
@@ -184,7 +192,7 @@ SatField, SatGrid, SatInd = DF.SatFieldInit(S, SatDivide, DomainXLims,
                                             DomainYLims, DomainZLims,
                                             RNG, 'mono')
     
-Diffusion = True
+Diffusion = False
 DropMove = True
 
 TempField = np.ones_like(SatField)*T
@@ -286,7 +294,7 @@ DF.SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
               OAParameters, SolTrack, ChemData, CoCond, RunTime,
               Instances, Time, BreakTime, mtol, DTs, ErrTrack,
               tolTrack, SurfMode, SatGrid, SatDivide, SatInd, SatField,
-              sft, Diffusion, DropMove)
+              sft, Diffusion, DropMove, SizeThreshold, k, CollCoal)
 
 
 end = time.time()
@@ -317,7 +325,7 @@ if CoCond == True:
                         MeanHeight-InitZ, Time, MontVars], dtype=object)
 
 else:
-    AllData = np.array([DropTrack, SolTrack[:,:,0].reshape(190*Cubes,6,1), 
+    AllData = np.array([DropTrack, SolTrack[:,:,0].reshape(NumberDrops*Cubes,6,1), 
                         CritParams, Sdt, Tdt, Pdt, 
                         MeanHeight-InitZ, Time, MontVars], dtype=object)
 

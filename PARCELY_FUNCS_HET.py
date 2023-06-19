@@ -11,7 +11,7 @@ import numpy as np
 from pandas import read_csv
 import numba as nb
 from scipy.optimize import fmin, toms748, fsolve
-from scipy.signal import find_peaks, savgol_filter
+from scipy.signal import savgol_filter
 import warnings
 from sklearn.cluster import KMeans
 from sklearn import neighbors
@@ -81,22 +81,22 @@ def InitDecouple(Positions, Radii, k):
 
 
 @nb.njit
-def Decouple(Position1, Position2, Radius1, Radius2, Distance):
-    """Function to prevent particles sticking or meshing with each other due
-    to overlapping radii, likely because time-steps are too small.
-    Position1   :   Position vector of first collided particle.
-    Position2   :   Position vector of second collided particle.
-    Radius1     :   Radius of first collided particle.
-    Radius2     :   Radius of second collided particle.
-    Distance    :   Distance between position vectors."""
+def Decouple(DropPop, IDs):
+    """Function to decouple droplets that may find themselves sticking to each
+    other due to numerical/coding issues when dealing with the collision
+    and new velocities.
+    
+    DropPop : Droplet data array
+    IDs     : Array for collider indices
+    Output  : New positions of colliding particles."""
         
     # Shorthands for variables
-    X1, Y1, Z1 = Position1[0], Position1[1], Position1[2]
-    X2, Y2, Z2 = Position2[0], Position2[1], Position2[2]
+    X1, Y1, Z1 = DropPop[IDs[0],1], DropPop[IDs[0],2], DropPop[IDs[0],3]
+    X2, Y2, Z2 = DropPop[IDs[1],1], DropPop[IDs[1],2], DropPop[IDs[1],3]
 
-    R1 = Radius1
-    R2 = Radius2
-    D = Distance
+    R1 = DropPop[IDs[0],8]
+    R2 = DropPop[IDs[1],8]
+    D  = np.linalg.norm(DropPop[IDs[0],1:4]-DropPop[IDs[1],1:4])
     
     # Axes distances between particle centers
     DX = np.abs(X1 - X2)
@@ -155,26 +155,35 @@ def Decouple(Position1, Position2, Radius1, Radius2, Distance):
     return NewPosition1, NewPosition2
 
 
-# @nb.jit
-# def DropDelete(Index, Droplets, NewPosts, NewVels, Solts, OrgVert):
-#     """Function for deleting a list of droplets that have been "swallowed" by
-#     another droplet. See function CollisionDetection. Takes all the new and old
-#     droplet variables from which the droplet will be deleted."""
+@nb.njit
+def SetDiffnb(a, b):
+    """Function to recreate (like a caveman) the numpy.setdiff1d function
+    in order to use it as a work-around to numpy.delete when using a numba
+    function. You may not like it, but this is what it takes.
     
-#     # Find the correct index
-#     NewIndex = []
-#     for i in range(len(Index)):
-#         place = np.where(Droplets==Index[i])[0][0]
-#         NewIndex.append(place)
+    a : Bigger array
+    b : Smaller array
+    Output : Filtered array."""
     
-#     # Delete droplet from arrays of variables (postion, velocity etc.)
-#     Droplets = np.delete(Droplets, NewIndex, 0)
-#     NewPosts = np.delete(NewPosts, NewIndex, 0)
-#     NewVels = np.delete(NewVels, NewIndex, 0)
-#     Solts = np.delete(Solts, NewIndex, 0)
-#     OrgVert = np.delete(OrgVert, NewIndex, 0)
-                    
-#     return Droplets, NewPosts, NewVels, Solts, OrgVert
+    # List for values to keep
+    Good = []
+    
+    # Looping over first array
+    for i in range(a.size):
+        # Setting a counter to detect identical values between arrays
+        Hit = 0
+        # Looping over second array
+        for j in range(b.size):
+            # If value identical
+            if a[i] == b[j]:
+                # Increase counter
+                Hit += 1
+        # If counter wasn't increased
+        if Hit == 0:
+            # Add value to the good list
+            Good.append(a[i])
+    
+    return np.array(Good)
 
 
 @nb.njit
@@ -199,95 +208,298 @@ def TerminalVel(Rad, Temperature, Pressure, AmbSat):
     return VelTerm
 
 
-# @nb.njit
-# def Collision(Velocity1, Velocity2, Mass1, Mass2, Cr):
-#     """Function to calculate new velocities after a particle collision."""
+@nb.njit
+def CollisionVelocity(DropPop, IDs, cr=1):
+    """Function to calculate the new velocities of colliding particles.
+    
+    DropPop : Droplet data array
+    IDs     : Array of Indices of colliding particles
+    cr      : Float, Coefficient of restitution
+    Output  : Arrays of new velocities of each particle."""
+    
+    # Get mass
+    Mass1 = DropPop[IDs[0],7]
+    Mass2 = DropPop[IDs[1],7]
+    
+    # Get velocity
+    v1 = DropPop[IDs[0],4:7]
+    v2 = DropPop[IDs[1],4:7]
+    
+    # Calculate new velocity
+    NewV1 = (cr*Mass2*(v2-v1)+Mass1*v1+Mass2*v2)/(Mass1 + Mass2)
+    NewV2 = (cr*Mass1*(v1-v2)+Mass1*v1+Mass2*v2)/(Mass1 + Mass2)
+    
+    return NewV1, NewV2
 
-#     # Rename variables for ease
-#     v1 = Velocity1
-#     v2 = Velocity2
-#     M = Mass1 + Mass2
+
+@nb.njit
+def CollisionDetection(DropPop, SortDist, AllIDs, Lrg):
+    """Function to calculate whether particles have collided using the distance
+    to their nearest neighbors.
     
-#     NeV1 = (Cr*Mass2*(v2-v1)+Mass1*v1+Mass2*v2)/M
-#     NeV2 = (Cr*Mass1*(v1-v2)+Mass1*v1+Mass2*v2)/M
+    DropPop  : Data array of droplets
+    SortDist : Array of distances (m) of k-nearest neighbors
+    AllIDs   : Array of IDs of every particle in SortDist
+    Lrg      : Array of particles large enough to coalesce
+    Output   : Array of indices of colliding particles."""
     
-#     return NeV1, NeV2
+    # Holding list for colliding pairs
+    Colliders = []
+    
+    # Loop over large-enough particles
+    for i in range(Lrg.size):
+        # Loop over its k-nearest neighbors
+        for j in range(SortDist.shape[1]):
+            # If distance between particle and neighbor less than the sum
+            # of both radii, assumed collision
+            if SortDist[i][j] < DropPop[Lrg[i],8] + DropPop[AllIDs[i,j],8]:
+                Pairing = [Lrg[i], AllIDs[i,j]]
+                Colliders.append([min(Pairing), max(Pairing)])
+    
+    # Return holding list as array
+    Step = np.zeros((len(Colliders),2)).astype(np.int_)
+    for n in range(Step.shape[0]):
+        Step[n] = Colliders[n]
+        
+    # Use pairing function as an annoying work-around to Numba's lack of
+    # supported numpy features, to determine duplicates
+    # Hopcroft Ullman
+    HopUll = 0.5*(Step[:,0] + Step[:,1] - 2)*(Step[:,0] + Step[:,1] - 1)\
+            + Step[:,0]
+    
+    # List to hold duplicate indices
+    ToDel = []
+    # Loop over pairing function to find duplicate indices
+    for i in range(Step.shape[0]):
+        for j in range(Step.shape[0]):
+            if i != j:
+                if HopUll[i] == HopUll[j]:
+                    ToDel.append(j)
+    
+    # Convert list to array
+    ToDel = np.array(ToDel)
+    AllIndices = np.arange(0, Step.shape[0], 1)    
+    
+    # Delete duplicates using the SetDiff1d stupid workaround
+    if ToDel.size > 0:
+        GoodIndices = SetDiffnb(AllIndices, ToDel)
+        Step = Step[GoodIndices]
+    
+    return Step
 
 
-# @nb.jit
-# def CollisionDetection(IDS, Droplets, Radii, Dists, Solts, NewPosts, NewVels,
-#                        Updraft, Cr, Dimension, Prob):
-#     """Function to detect whether a collision has occurred between two droplets
-#     and if it has, either separate them or merge them.
+@nb.njit(cache=True, parallel=True, nogil=True)
+def NearestNeighbors(DropPop, k, SizeThreshold=20e-6):
+    """Brute-force calculation of k-nearest neighbors for each particle.
     
-#     IDS         :   Assigned number for each droplet involved in a collision
-#     Droplets    :   Array containing droplet data
-#     Dists       :   Distances between droplets
-#     Solts       :   Droplet solute parameters
-#     NewPosts    :   New droplet positions
-#     NewVels     :   New droplet velocities
-#     Updraft     :   Updraft velocity vector
-#     Cr          :   Coefficient of restitution
-#     Dimension   :   Number of dimensions in simulation."""
+    DropPop       : Data array of droplets
+    k             : Integer, user-defined number of nearest neighbors to find
+    SizeThreshold : Float (m), size of particles allowed to coalesce
+    Output: (1) Array of distances of k-neighbors,
+            (2) Array of indices of the neighbors
+            (3) Array of indices of particles large enough to coalesce."""
     
-#     N     = Droplets.shape[0]   # Number of droplets
-#     Rad   = np.stack((Droplets[:,0], Radii)).T # Radii
-#     Vels  = Droplets[:,4:7]     # Velocities
-#     Posts = Droplets[:,1:4]     # Positions
-#     Mass  = Droplets[:,7]       # Masses
+    # Number of particles
+    N = DropPop.shape[0]
+    # K-nearest neighbors
+    K = min(k, N)
+    # Particles large enough to coalesce
+    Lrg = np.where(DropPop[:,8] >= SizeThreshold)[0]
     
-#     # List of droplets that have merged with another and will be deleted
-#     Indices = []
+    # Initialize array of distances, IDs, and sorted distances
+    AllDist  = np.zeros((Lrg.size, N))
+    AllIDs   = np.zeros_like(AllDist)
+    SortDist = np.zeros_like(AllDist)
+
+    # Loop through each possible pairs of positions and find distance
+    # between particle centers
+    for i in nb.prange(Lrg.size):
+        for j in nb.prange(N):
+            AllDist[i,j] = np.linalg.norm(DropPop[Lrg[i],1:4]-DropPop[j,1:4])
+
+    # Sort by distance
+    for i in range(Lrg.size):
+        SortDist[i,:] = np.sort(AllDist[i,:])
+        # Get IDs
+        AllIDs[i,:] = np.argsort(AllDist[i,:])
     
-#     # For overwriting
-#     NewRads = Rad.copy()
-#     NewMass = Mass.copy()
-#     NewSolt = Solts.copy()
+    # Collect only needed data
+    SortDist = SortDist[:,1:K]
+    IDs = AllIDs[:,1:K].astype(np.int_)
     
-#     for i in range(N):
-#         # See KD-Tree functions
-#         for j,k in enumerate(IDS[i]):
-#             # If the distance between the centers of two droplets is less than
-#             # the sum of their radii, they have collided
-#             if Dists[i][j] < Rad[i,1] + Rad[k,1]:
+    return SortDist, IDs, Lrg
+
+
+@nb.njit
+def Coalescence(DropPop, Solutes, SolutesDry, OAParameters, Coals,
+                Temperature, Pressure, Saturation, SurfMode, sft, ac, at):
+    """Gigantic function to determine (crudely) coalescence between two
+    colliding particles.
+    
+    DropPop : Data array of droplets
+    Solutes      : Solute Array
+    SolutesDry   : SoluteFilter array
+    Coals        : Array of indices of colliding particles
+    Temperature  : K (Ambient temperature field)
+    Pressure     : Pa (Ambient pressure field)
+    Updraft      : m/s (Updraft velocity)
+    Saturation   : % (Saturation ratio field)
+    ac, at       : Unitless (Kinetic effects coefficients)
+    OAParameters : Organic aerosol parameters
+    SurfMode     : String (Surface tension method)
+    sft          : if SurfMode is 'Constant', value for it in J/m^2
+    Output       : Droplet data array."""
+    
+    # Holding lists for adjusted and deleted droplets
+    Merged = []
+    Deleted = []
+    
+    # Temporary droplet, solute, dry solute arrays
+    MergedDrops = []
+    MergedSols = []
+    MergedDrys = []
+    
+    # Loop over each pair of colliders
+    for n in range(Coals.shape[0]):
+        # Probability that coalescence occurs
+        Prob = np.random.random(1)[0]
+        
+        Pair = Coals[n]
+        
+        # Decouple particles
+        NewP1, NewP2 = Decouple(DropPop, Pair)
+        NewV1, NewV2 = CollisionVelocity(DropPop, Pair)
+        
+        # If coalesced
+        if Prob > 0.5:
+            NewDrop = np.zeros(12)
+            NewSolute = np.zeros(Solutes.shape[1])
+            NewDrySol = np.zeros(SolutesDry.shape[1])
+
+            # If particle 1 is bigger than particle 2
+            if DropPop[Pair[0],8] > DropPop[Pair[1],8]:
+                NewDrop[0] = Pair[0]
+                NewSolute[0] = Pair[0]
+                NewSolute[3] = Solutes[Pair[0],3]
+                NewDrop[1:4] = NewP1
+                NewDrop[4:7] = NewV1
                 
-#                 # New velocities
-#                 NewVels[i,:], NewVels[k,:] = Collision(Vels[i,:], Vels[k,:],
-#                                                        Mass[i], Mass[k], Cr)
-
-#                 # Separate the two particles from each other
-#                 NewPosts[i,:], NewPosts[k,:] = Decouple(Posts[i,:],
-#                                                         Posts[k,:],
-#                                                         Rad[i,1],
-#                                                         Rad[k,1],
-#                                                         Dists[i][j],
-#                                                         Dimension)
+                # Append droplets to designated lists
+                Merged.append(Pair[0])
+                Deleted.append(Pair[1])
                 
-#                 # Determining Coalescence
-#                 P = Prob
-#                 # Generate random number
-#                 X = np.random.rand()
-#                 # If random number is smaller than probability,
-#                 # coalescence occurs, larger drop absorbs the smaller.
-#                 if P > X:
-#                     if Rad[i,1] > Rad[k,1]:
-#                         NewMass[i] += 0.5*Mass[k]
-#                         NewRads[i,1] = ((3*NewMass[i])/(4*np.pi*rhoL))**(1/3)
-#                         NewSolt[i,5] = KappaMixing(Solts[i], Solts[k])
-                        
-#                         Indices.append(Rad[k,0])
-                        
-#                     if Rad[i,1] < Rad[k,1]:
-#                         NewMass[k] += 0.5*Mass[i]
-#                         NewRads[k,1] = ((3*NewMass[k])/(4*np.pi*rhoL))**(1/3)
-#                         NewSolt[k,5] = KappaMixing(Solts[i], Solts[k])
-                        
-#                         Indices.append(Rad[i,0])
+            # If particle 2 is bigger than particle 1
+            if DropPop[Pair[0],8] < DropPop[Pair[1],8]:
+                NewDrop[0] = Pair[1]
+                NewSolute[0] = Pair[1]
+                NewSolute[3] = Solutes[Pair[1],3]
+                NewDrop[1:4] = NewP2
+                NewDrop[4:7] = NewV2
+                
+                # Append droplets to designated lists
+                Merged.append(Pair[1])
+                Deleted.append(Pair[0])
+            
+            # New solute masses, kg
+            NewSolute[2] = Solutes[Pair,2].sum()
+            if Solutes.shape[1] > 6:
+                NewSolute[6:] = Solutes[Pair,6:].sum(axis=0)
+            NewDrySol[2] = Solutes[Pair,2].sum()
+            NewDrySol[3] = NewSolute[3]
+            
+            # New densities, kg/m3
+            NewDrySol[4] = SolutesDry[Pair[0],2]*SolutesDry[Pair[0],4]\
+                            /NewDrySol[2] + \
+                            SolutesDry[Pair[1],2]*SolutesDry[Pair[1],4]\
+                            /NewDrySol[2]
+            
+            if Solutes.shape[1] > 6:
+                DensityFractions = (NewSolute[6:]/NewSolute[2])*\
+                                    OAParameters[:,1]
+                
+                NewSolute[4] = NewDrySol[2]*NewDrySol[4]/NewSolute[2] + \
+                                DensityFractions.sum()
+            
+            else:
+                NewSolute[4] = NewDrySol[4]
+            
+            # New radii
+            NewDrySol[1] = ((3/(4*np.pi))*(NewDrySol[2]/NewDrySol[4]))**(1/3)
+            NewSolute[1] = ((3/(4*np.pi))*(NewSolute[2]/NewSolute[4]))**(1/3)
+            
+            # New kappas
+            V1 = SolutesDry[Pair[0],2]/SolutesDry[Pair[0],4]
+            V2 = SolutesDry[Pair[1],2]/SolutesDry[Pair[1],4]
+            VT = NewDrySol[2]/NewDrySol[4]
+            
+            NewDrySol[5] = SolutesDry[Pair[0],5]*V1/VT + \
+                            SolutesDry[Pair[1],5]*V2/VT
+            
+            # Volumes from mass and density, m^3
+            Vd = NewDrySol[2]/NewDrySol[5]
+            if Solutes.shape[1] > 6:
+                Vos = NewSolute[6:]/OAParameters[:,1]
+                Vtot = Vd + Vos.sum()
+            
+                # Volume fractions of solute and organics
+                VfracD = Vd/Vtot
+                Vfracos = Vos/Vtot
+                
+                Vfracos = np.ascontiguousarray(Vfracos)
+                KappaOA = np.ascontiguousarray(OAParameters[:,5])
+                
+                # New kappa mixing rule
+                Mixture = np.dot(Vfracos, KappaOA)
+                NewSolute[5] = NewDrySol[5]*VfracD + Mixture
+                
+            else:
+                NewSolute[5] = NewDrySol[5]
+            
+            NewDrop[7] = DropPop[Pair[0],8] + DropPop[Pair[1],8]
+            
+            MergedDrops.append(NewDrop)
+            MergedSols.append(NewSolute)
+            MergedDrys.append(NewDrySol)
     
-#     # This step is to remove the doubling problem, removes duplicate indices
-#     Indices = list(set(Indices))
+    # Convert lists to arrays
+    Merged = np.array(Merged)
+    Deleted = np.array(Deleted)
+   
+    # Copy population arrays
+    NewDropPop = DropPop.copy()
+    NewSolPop = Solutes.copy()
+    NewDryPop = SolutesDry.copy()
     
-#     return NewRads[:,1], NewMass, NewSolt, Indices
+    # If coalescence occurs
+    if Merged.size > 0:
+        MergeDropArray = np.zeros((Merged.size, DropPop.shape[1]))
+        MergeSolArray = np.zeros((Merged.size, Solutes.shape[1]))
+        MergeDrySolArray = np.zeros((Merged.size, SolutesDry.shape[1]))
+        
+        # Cave-man style code to work around Numba's authoritarian regime
+        for d in range(Merged.size):
+            for i in range(DropPop.shape[1]):
+                MergeDropArray[d,i] = MergedDrops[d][i]
+            for j in range(Solutes.shape[1]):
+                MergeSolArray[d,i] = MergedSols[d][j]
+            for l in range(SolutesDry.shape[1]):
+                MergeDrySolArray[d,i] = MergedDrys[d][l]
+    
+        # Adjust new particles that coalesced
+        NewDropPop[Merged,:] = MergeDropArray
+        NewSolPop[Merged,:] = MergeSolArray
+        NewDryPop[Merged,:] = MergeDrySolArray
+        
+        # Delete particles that were "swallowed" using another work-around
+        # because Numba hates you (setdiff1d of numpy, but stupider)
+        AllParticles = np.arange(0, NewDropPop.shape[0], 1)
+        GoodParticles = SetDiffnb(AllParticles, Deleted)
+        
+        NewDropPop = NewDropPop[GoodParticles,:]
+        NewSolPop = NewSolPop[GoodParticles,:]
+        NewDryPop = NewDryPop[GoodParticles,:]
+    
+    return NewDropPop, NewSolPop, NewDryPop
 
 
 @nb.njit
@@ -528,7 +740,7 @@ def DropSurfTension(WetData, DryData, OAParameters,
     
     # Volumes from mass and density
     Vos = DryData[:,6:]/OAParameters[:,1] # Organics
-    Vw  = WetData[:,3]/rhoL               # Water
+    Vw  = WetData[:,7]/rhoL               # Water
     Vd  = DryData[:,2]/DryData[:,4]       # Solutes
     
     # Surface tension of water, J/m2
@@ -580,7 +792,7 @@ def DropSurfTension(WetData, DryData, OAParameters,
         # Characteristic monolayer thickness taken from AIOMFAC
         delz = 0.2e-9
         # Volume of the monolayer, m^3
-        Vmono = (4/3)*np.pi*(WetData[:,4]**3 - (WetData[:,4] - delz)**3)
+        Vmono = (4/3)*np.pi*(WetData[:,8]**3 - (WetData[:,8] - delz)**3)
         
         # Determine if there's enough organics to cover the particle
         # If not enough, define the surface coverage fraction, else = 1
@@ -612,7 +824,7 @@ def KappaKoehler(WetData, SolData, OAParameters, Temperature, SurfMode, sft):
     Output       : Unitless, J/m^2."""
     
     # Kelvin factor, unitless
-    Factor = (WetData[:,4]**3 - SolData[:,1]**3)/(WetData[:,4]**3 - \
+    Factor = (WetData[:,8]**3 - SolData[:,1]**3)/(WetData[:,8]**3 - \
                 (SolData[:,1]**3)*(1.0- SolData[:,5]))
     
     # Check to see if there's any organics
@@ -625,14 +837,14 @@ def KappaKoehler(WetData, SolData, OAParameters, Temperature, SurfMode, sft):
             
         # Droplet surface saturation ratio
         DropSat = Factor*np.exp((2.0*Sigsw*Mw)/\
-                                (Temperature*R*WetData[:,4]*rhoL))
+                                (Temperature*R*WetData[:,8]*rhoL))
     
     else:
         # Calculate surface tension of the droplet, J/m2
         Sigsw = np.ones_like(Factor)*WaterSurfaceTension(Temperature)
         # Droplet surface saturation ratio
         DropSat = Factor*np.exp((2.0*Sigsw*Mw)/\
-                                (Temperature*R*WetData[:,4]*rhoL))
+                                (Temperature*R*WetData[:,8]*rhoL))
     
     return DropSat, Sigsw
 
@@ -699,7 +911,7 @@ def GrowthRate(WetData, AmbSat, Temperature, Pressure, ac, at):
     # Saturation vapor pressure, Pa
     es = SVP(Temperature)
     # Conductivity (J/m/s/K) and Diffusivity (m^2/s)
-    K, D = KineticEffects(WetData[:,4], Temperature, Pressure, AmbSat, ac, at)
+    K, D = KineticEffects(WetData[:,8], Temperature, Pressure, AmbSat, ac, at)
     # Latent head of condensation, J/kg
     L = LatentCond(Temperature)
     
@@ -708,8 +920,8 @@ def GrowthRate(WetData, AmbSat, Temperature, Pressure, ac, at):
     Fd = Rv*Temperature/(D*es)
     
     # Growth rate
-    GRate = (AmbSat-WetData[:,5])*((4*np.pi)**(2/3))*\
-            ((3/rhoL)**(1/3))*(WetData[:,3]**(1/3))/(Fd + Fk)
+    GRate = (AmbSat-WetData[:,9])*((4*np.pi)**(2/3))*\
+            ((3/rhoL)**(1/3))*(WetData[:,8]**(1/3))/(Fd + Fk)
     
     return GRate
 
@@ -1330,14 +1542,14 @@ def ActivateDetectVisNew(DropData, Offset, Method='argmax'):
     (6) Indices of inactivated droplets."""
     
     # Get radii array
-    Radii = DropData[:,4,:]
+    Radii = DropData[:,8,:]
     # Smooth radii
     RadFilt = savgol_filter(Radii, 51, 5)
     
     if Method == 'kmeans':
         
         # Get final time-step of every droplet's radius
-        End = DropData[:,4,-1].reshape(-1,1)
+        End = DropData[:,8,-1].reshape(-1,1)
         kmeans = KMeans(init='k-means++' ,n_clusters=2, n_init=3, max_iter=300)
     
         # Suppress warning that triggers when no droplets activate
@@ -1361,7 +1573,7 @@ def ActivateDetectVisNew(DropData, Offset, Method='argmax'):
         
         # If two groups, assign larger mean to activated
         if Group1.size > 0 and Group2.size > 0:
-            if DropData[Group1,4,-1].mean() > DropData[Group2,4,-1].mean():
+            if DropData[Group1,8,-1].mean() > DropData[Group2,8,-1].mean():
                 Activated = Group1
                 UnActivated = Group2
             else:
@@ -1432,7 +1644,7 @@ def ActivationDetection(DropData, CritData):
     (3) Indices of unactivated droplets."""
     
     # Get wet radii
-    RadWet = DropData[:,4,:]
+    RadWet = DropData[:,8,:]
     # Get critical radii
     CritRad = CritData[:,0]
     
@@ -1484,8 +1696,8 @@ def PopInitializeF(NumberDrops, Radius, Solutes, RNG, Temperature, Pressure,
     # 0:        Tracking number
     # 1,2,3:    Position
     # 4,5,6:    Velocity
-    # 7:        Radius
-    # 8:        Mass
+    # 7:        Mass
+    # 8:        Radius
     # 9:        Surface Saturation
     # 10:       Growth Rate
     # 11:       Surface Tension
@@ -2005,7 +2217,7 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
     P_sat = (CSat*Rd_alt*T)/(1.0e9*OAParameters[:,0])
     
     # Mole fractions, condensed
-    x = DropMoleFrac(DropArray[:,3], SoluteDry[:,2], SoluteArray[:,6:], 
+    x = DropMoleFrac(DropArray[:,7], SoluteDry[:,2], SoluteArray[:,6:], 
                       SoluteArray[:,3], OAParameters[:,0])
     
     # Kelvin effect factor
@@ -2024,7 +2236,7 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
     # Populate
     for i in range(C.size):
         # Kelvin effect
-        KelFactor[:,i] = np.exp((2*DropArray[:,7]/(R*T*DropArray[:,4]))*MolVol)
+        KelFactor[:,i] = np.exp((2*DropArray[:,11]/(R*T*DropArray[:,8]))*MolVol)
         # Equilibrium pressure
         EquiPress[:,i] = x[:,i]*P_sat[i]*KelFactor[:,i]
     
@@ -2032,7 +2244,7 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
     Csurf = EquiPress*(NA/(Rd_alt*1.0e6*T))
     
     # Condensation rates array, kg/s
-    dmdt = np.zeros((DropArray[:,4].size, OAParameters.shape[0]))
+    dmdt = np.zeros((DropArray[:,8].size, OAParameters.shape[0]))
     # Arrays to save means (necessary due to numba package)
     CSurfmeans = np.zeros_like(C)
     xmeans = np.zeros_like(C)
@@ -2040,15 +2252,15 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
     for i in range(C.size):
         
         # Adjusted for mass accommodation effects, alpha=0.1 (Sahle et al 2013)           
-        Dact = OAParameters[i,2]/(DropArray[:,4]/(DropArray[:,4] + \
-                    (1.12e-7)/2) + (OAParameters[i,2]/(1.0*DropArray[:,4]))*\
+        Dact = OAParameters[i,2]/(DropArray[:,8]/(DropArray[:,8] + \
+                    (1.12e-7)/2) + (OAParameters[i,2]/(0.1*DropArray[:,8]))*\
                         np.sqrt(2.0*np.pi*OAParameters[i,0]/(R*T)))
         
         CSurfmeans[i] = np.mean(Csurf[:,i])
         xmeans[i] = np.mean(x[:,i])
 
         # Growth rate per droplet, in kg/s
-        dmdt[:,i] = (4*np.pi*DropArray[:,4]*1e2*Dact*1e4*(C[i] - Csurf[:,i]))*\
+        dmdt[:,i] = (4*np.pi*DropArray[:,8]*1e2*Dact*1e4*(C[i] - Csurf[:,i]))*\
                     OAParameters[i,0]/NA
     
     # Total growth rate for OA in kg/cm^3/s
@@ -2085,9 +2297,11 @@ def KappaChanger(MassSol, MassOa, RhoSol, RhoOA, KappaSol, KappaOA):
     
     # Total volume, m^3
     Vtot = Vd + Vos.sum(axis=1)
+
     # Volume fractions of solute and organics
     VfracD = Vd/Vtot
     Vfracos = np.zeros_like(MassOa)
+
     for i in range(MassOa.shape[1]):
         Vfracos[:,i] = Vos[:,i]/Vtot
     
@@ -2135,17 +2349,17 @@ def SoluteGrowth(Solutes, SolutesDry, OAGrowthRate, OAParameters, dt):
         DensityFraction[:,i] = (CondMasses[:,i]/Md)*OAParameters[i,1]
     
     # New density, kg/m3
-    Rhodry = (SolutesDry[:,2]/Md)*SolutesDry[:,4] + DensityFraction.sum(axis=1)
+    RhoSol = (SolutesDry[:,2]/Md)*SolutesDry[:,4] + DensityFraction.sum(axis=1)
     
     # New radius, m
-    rd = ((3/(4*np.pi))*(Md/Rhodry))**(1/3)
+    rd = ((3/(4*np.pi))*(Md/RhoSol))**(1/3)
         
     # New kappa
     NewKappa = KappaChanger(SolutesDry[:,2], CondMasses, SolutesDry[:,4],
                             OAParameters[:,1], SolutesDry[:,5],
                             OAParameters[:,5])
 
-    return Md, Rhodry, rd, CondMasses, NewKappa
+    return Md, RhoSol, rd, CondMasses, NewKappa
 
 
 def OrganicsArray(MolarMass, Concentration, Kappa, SurfTension, Densities, 
@@ -2272,7 +2486,7 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
               OAParameters, SolTrack, ChemData, CoCond, RunTime,
               Instances, TimeTrack, BreakTime, mtol, DTS, ErrTrack,
               tolTrack, SurfMode, SatGrid, SatDivide, SatInd, SatField, sft, 
-              Diffusion, DropMove):
+              Diffusion, DropMove, SizeThreshold, k, CollCoal):
     
     # Save initial time as reference temperature for organics
     Tref = TempField.mean()
@@ -2293,12 +2507,42 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
             BreakTime[0] = int((np.abs(time-Instances)).argmin())
             
             break
-        
+            
         # Find where droplets are in respect to saturation grid
         Sats, DropFind, Temps, Pres = SatGridID(DropPop[:,1:4], SatGrid, 
                                            SatField, SatInd, TempField, 
                                            PressField)
         
+        # Collision-Coalescence
+        if CollCoal is True:
+            # Find k-nearest neighbors of the largest particles
+            SortDist, IDs, Lrg = NearestNeighbors(DropPop, k, SizeThreshold)
+            # Find colliders
+            if len(Lrg) > 0:
+                Colliders = CollisionDetection(DropPop, SortDist, IDs, Lrg)
+                if Colliders.size >= 2:
+                    # Determine coalescence and adjust population arrays
+                    DropPop, Solutes, SoluteFilter = Coalescence(DropPop, 
+                                                                 Solutes, 
+                                                    SoluteFilter, OAParameters, 
+                                                    Colliders, Temps, Pres, 
+                                                    Sats, SurfMode, sft, 
+                                                    ac, at)
+                    # New radius
+                    DropPop[:,8] = ((3/(4*np.pi)*(DropPop[:,7]/rhoL)) + \
+                                    Solutes[:,1]**3)**(1/3)
+                    
+                    # Droplet saturation
+                    DropPop[:,9], DropPop[:,11] = KappaKoehler(DropPop, 
+                                                               Solutes, 
+                                                        OAParameters, Temps, 
+                                                        SurfMode, sft)
+                    
+                    # New diffusional growth rate
+                    DropPop[:,10] = GrowthRate(DropPop, Sats, Temps, Pres, 
+                                               ac, at)
+                
+                
         # Get terminal velocities
         TerminalVels = TerminalVel(DropPop[:,8], Temps, Pres, Sats)
         
@@ -2432,119 +2676,3 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
     
                                 
     return
-
-
-# @nb.jit(cache=True)
-# def SimColl(DropPop, DropTrack, NSteps, Solutes, OrigVertVel, Every, M, dt,
-#               T, P, DomainZLims, DomainXLims, DomainYLims, Updraft, Sdt, 
-#               Pdt, Tdt, Zlims, Rads, Sdrop, GRates, Q1dt, Q2dt, Cubes, ac, at, 
-#               S, Cr):
-    
-#     for STEP in range(NSteps):
-            
-#         # Prevent error if all droplets disappear due to reaching the surface
-#         N = DropPop.shape[0]
-        
-#         if N < 1:
-#             print('All drops reached the surface.')
-#             EndTime = int(STEP/Every + 1)
-#             break
-#         else:
-#             EndTime = M+1
-    
-#         # Dynamics
-#         # Find distances between droplets
-#         Distances, NeighborIDs = \
-#                       neighbors.KDTree(DropPop[:,1:4]).query(DropPop[:,1:4],
-#                               k=min(10, DropPop.shape[0]), return_distance=True, 
-#                               sort_results=True)
-             
-#         # Remove the droplet itself from the arrays (distance with itself)
-#         NeighborIDs = [np.delete(x, 0) for x in NeighborIDs]
-#         Distances   = [np.delete(x, 0) for x in Distances]
-        
-#         # Update velocities and positions with updraft and terminal velocity
-            
-#         TerminalVels = TerminalVel(DropPop[:,7], T, P, S)
-        
-#         NewVelocities           = DropPop[:,np.array([0,4,5,6])].copy()
-#         NewVelocities[:,3]      = OrigVertVel - TerminalVels
-#         NewPositions            = DropPop[:,0:4].copy()
-#         NewPositions[:,1:]      = NewVelocities[:,1:]*dt + DropPop[:,1:4]
-        
-#         # Droplet collisions
-#         Rads, DropPop[:,7], Solutes, Index, = CollisionDetection(NeighborIDs, 
-#                                                                 DropPop, Rads,
-#                                                         Distances, Solutes, 
-#                                                         NewPositions[:,1:], 
-#                                                         NewVelocities[:,1:],
-#                                                         Updraft, Cr, 3, 1)
-        
-        
-#         # Append droplets that have reached the surface to the to-delete list
-#         for Drop in range(DropPop.shape[0]):
-#             if DropPop[Drop,3] <= 0:
-#                 Index.append(int(DropPop[Drop,0]))
-                
-        
-#         # Remove droplets that have been absorbed
-#         DropPop, NewPositions, NewVelocities,\
-#             Solutes, OrigVertVel = DropDelete(Index, 
-#                                                 DropPop, 
-#                                                 NewPositions,
-#                                                 NewVelocities, 
-#                                                 Solutes,
-#                                                 OrigVertVel)
-        
-        
-#         # For looping
-#         DropPop[:,4:7] = NewVelocities[:,1:]
-#         DropPop[:,1:4]  = NewPositions[:,1:]
-        
-#         # Physics
-#         # New droplet mass
-#         DropPop[:,7] = NewMass(DropPop[:,7], GRates, dt)
-    
-#         # Update radii
-#         Rads = ((3/(4*np.pi)*(DropPop[:,7]/rhoL)) + Solutes[:,1]**3)**(1/3) 
-                
-#         # Droplet saturation
-#         Sdrop = KappaKoehler(Rads, Solutes[:,1], Solutes[:,5], T, SurfMode)
-    
-#         # New diffusional growth rate
-#         GRates = GrowthRate(Rads, S, Sdrop, T, P, ac, at)
-    
-#         # Update vertical boundaries
-#         DomainZLims = np.median(DropPop[:,6])*dt + DomainZLims
-
-#         # Apply boundary conditions
-#         DropPop = BoundaryConds3D(DropPop, DomainXLims, 
-#                                   DomainYLims, DomainZLims)
-    
-#         # Environment
-#         # Update pressure level
-#         P = PressEvolution(P, Updraft[2], T, S, dt)
-#         # Update temeprature
-#         T = TempEvolution(Updraft[2], GRates, T, P, S, dt, Cubes)
-#         # Update saturation ratio grid field
-#         S = EnvSatTime(T, Updraft[2], GRates, S, dt, P, Cubes)[0]
-
-
-#         # Data Tracking
-#         if STEP % Every == 0:
-                    
-#             Sdt[int(STEP/Every + 1)]    = S
-#             Tdt[int(STEP/Every + 1)]    = T
-#             Pdt[int(STEP/Every + 1)]    = P
-#             # Q1dt[int(STEP/Every + 1)]   = Q1
-#             # Q2dt[int(STEP/Every + 1)]   = Q2
-            
-#             Zlims[int(STEP/Every + 1),:] = DomainZLims
-            
-#             # Alloting data according to tracking number
-#             for Drop in range(DropTrack.shape[0]):
-#                 if DropTrack[Drop,0,int(STEP/Every)] in DropPop[:,0]:
-#                     DropTrack[Drop,1:,int(STEP/Every + 1)] = \
-#                                     DropPop[:,1:][DropPop[:,0] == Drop]
-
-#     return EndTime
