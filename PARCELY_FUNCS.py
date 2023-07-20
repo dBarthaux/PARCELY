@@ -225,7 +225,7 @@ def AirDensity(Temperature, Pressure, AmbSat):
 
 
 @nb.njit
-def SVP(Temperature, es0=1216):
+def SVP(Temperature, es0=611):
     """Calculate the saturation vapour pressure for a given temperature.
     
     Temperature : K (Ambient temperature)
