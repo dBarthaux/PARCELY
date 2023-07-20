@@ -105,20 +105,74 @@ def WaterSurfaceTension(Temperature, CritTemp=647.15):
     
 
 @nb.njit
-def LatentCond(Temperature):
-    """Polynomial for the latent heat of condensation from Rogers and Yau
-    (1996) Table 2.1.
+def LatentHeatEvap(Temperature, T0=273.16, cpv=2040, L0=2.501e6):
+    """Latent heat of condensation from Ambaum (2020).
     
     Temperature : K (Ambient temperature)
-    Output      : J/kg (Latent heat of condensation)."""
+    T0          : K (Temperature at triple point)
+    cpv         : J/kg/K (Isobaric mass heat capacity of vapor)
+    L0          : J/kg (Latent heat of vaporization at triple point)
+    Output      : J/kg (Latent heat of vaporization)."""
     
-    # Convert Kelvin to Celsius
-    C = Temperature - 273.15
-    
-    # Latent heat of condensation, J/kg
-    L = (2500.8 - 2.36*C + 0.0016*C**2 - 0.00006*C**3)*1e3
+    # Latent heat of vaporization, J/kg
+    L = L0 - (cpl-cpv)*(Temperature- T0)
     
     return L
+
+
+@nb.njit
+def LatentHeatSub(Temperature, T0=273.16, cpv=1885, L0=2.260e6):
+    """Latent heat of condensation from Ambaum (2020).
+    
+    Temperature : K (Ambient temperature)
+    T0          : K (Temperature at triple point)
+    cpv         : J/kg/K (Isobaric mass heat capacity of vapor)
+    L0          : J/kg (Latent heat of sublimation at triple point)
+    Output      : J/kg (Latent heat of sublimation)."""
+    
+    # Latent heat of sublimation, J/kg
+    L = L0 - (cpi-cpv)*(Temperature- T0)
+    
+    return L
+
+
+@nb.njit
+def SVP(Temperature, Phase, es0=611.655, T0=273.16, cpvl=2040, cpvi=1885,
+        L0l = 2.501e6, L0i = 2.260e6):
+    """Calculate the saturation vapour pressure for a given temperature and
+    phase of water (ice or liquid). Taken from Ambaum (2020).
+    
+    Temperature : K (Ambient temperature)
+    Phase       : String ('ice' or 'liquid')
+    es0         : Pa (Saturation vapor pressure at triple point [TRPLP])
+    T0          : K (Temperature at TRPLP)
+    cpvl        : J/kg/K (Isobaric mass heat capacity of vapor [liquid SVP])
+    cpvi        : J/kg/K (Isobaric mass heat capacity of vapor [ice SVP])
+    L0l         : J/kg (Latent heat of vaporization at TRPLP)
+    L0i         : J/kg (Latent heat of sublimation at TRPLP)
+    Output      : Pa (Saturation vapor pressure)."""
+    
+    if Phase == 'liquid':
+        
+        # Latent heat of vaporization, J/kg
+        L = LatentHeatEvap(Temperature, T0, cpvl, L0l)
+        
+        Part1 = es0*(T0/Temperature)**((cpl-cpvl)/Rv)
+        Part2 = np.exp(L0l/(Rv*T0) - L/(Rv*Temperature))
+        
+        es = Part1*Part2
+        
+    if Phase == 'ice':
+        
+        # Latent heat of vaporization, J/kg
+        L = LatentHeatSub(Temperature, T0, cpvi, L0i)
+        
+        Part1 = es0*(T0/Temperature)**((cpi-cpvi)/Rv)
+        Part2 = np.exp(L0i/(Rv*T0) - L/(Rv*Temperature))
+        
+        es = Part1*Part2
+        
+    return es
 
 
 @nb.njit
@@ -215,28 +269,13 @@ def AirDensity(Temperature, Pressure, AmbSat):
     Output      : kg/m^3 (Dry air density)."""
     
     # Saturation vapour pressure, Pa
-    es = SVP(Temperature)
+    es = SVP(Temperature, 'liquid')
     # Given water vapour partial pressure, Pa
     e = es*AmbSat
     # Dry air density
     rhoa = (Pressure-e)/(Rd*Temperature)
     
     return rhoa
-
-
-@nb.njit
-def SVP(Temperature, es0=611.655, T0=273.16):
-    """Calculate the saturation vapour pressure for a given temperature.
-    
-    Temperature : K (Ambient temperature)
-    Output      : Pa (Saturation vapor pressure)."""
-    
-    # Latent heat, J/kg
-    L = LatentCond(Temperature)
-    # Saturation vapour pressure, Pa
-    es = es0*np.exp((L/Rv)*(1/T0 - 1/Temperature))
-    
-    return es
 
 
 @nb.njit(cache=True)
@@ -439,11 +478,11 @@ def GrowthRate(WetData, AmbSat, Temperature, Pressure, ac, at):
     Output      : kg/s (Growth rates)"""
 
     # Saturation vapor pressure, Pa
-    es = SVP(Temperature)
+    es = SVP(Temperature, 'liquid')
     # Conductivity (J/m/s/K) and Diffusivity (m^2/s)
     K, D = KineticEffects(WetData[:,4], Temperature, Pressure, AmbSat, ac, at)
     # Latent head of condensation, J/kg
-    L = LatentCond(Temperature)
+    L = LatentHeatEvap(Temperature)
     
     # Growth parameters, mass-based
     Fk = (L/(Rv*Temperature)-1.0)*L/(K*Temperature)
@@ -566,9 +605,9 @@ def EnvSatTime(Temperature, Pressure, AmbSat, Updraft, GrowthRates, dt, Cubes):
     Output      : % (New saturation ratio)."""
      
     # Saturation vapour pressure, Pa
-    es = SVP(Temperature)
+    es = SVP(Temperature, 'liquid')
     # Latent heat, J/kg
-    L = LatentCond(Temperature)
+    L = LatentHeatEvap(Temperature)
     # Density of dry air, kg/m3
     rhoa = AirDensity(Temperature, Pressure, AmbSat)
     
@@ -595,7 +634,7 @@ def VirtualTemp(Temperature, Pressure, AmbSat):
     Output      : K (Virtual temperature."""
     
     # Saturation vapor pressure, Pa
-    es = SVP(Temperature)
+    es = SVP(Temperature, 'liquid')
     # Vapor pressure using saturation ratio, Pa
     e = es*AmbSat
     # Mixing ratio
@@ -640,7 +679,7 @@ def TempEvolution(Temperature, Pressure, AmbSat, Updraft,
     Output      : K (New ambient temperature)."""
     
     # Latent heat of condensation, J/kg
-    L = LatentCond(Temperature)
+    L = LatentHeatEvap(Temperature)
     # Dry air density, kg/m3
     rhoa = AirDensity(Temperature, Pressure, AmbSat)
     # New environmental temperature, K
@@ -1361,7 +1400,7 @@ def VaporMoleFraction(OAVapor, OAParameters, Temperature,
         nOA[c,:] = (p[c,:]*Cubes*(1e-2)**3)/(R*T)
     
     # Saturation vapour pressure, Pa
-    es = SVP(T)
+    es = SVP(T, 'liquid')
     # Vapour pressure, Pa
     e = es*S
     # Dry air pressure, Pa
