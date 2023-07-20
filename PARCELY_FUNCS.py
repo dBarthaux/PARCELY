@@ -225,7 +225,7 @@ def AirDensity(Temperature, Pressure, AmbSat):
 
 
 @nb.njit
-def SVP(Temperature, es0=611):
+def SVP(Temperature, es0=611.655, T0=273.16):
     """Calculate the saturation vapour pressure for a given temperature.
     
     Temperature : K (Ambient temperature)
@@ -234,7 +234,7 @@ def SVP(Temperature, es0=611):
     # Latent heat, J/kg
     L = LatentCond(Temperature)
     # Saturation vapour pressure, Pa
-    es = es0*np.exp((L/Rv)*(1/283 - 1/Temperature))
+    es = es0*np.exp((L/Rv)*(1/T0 - 1/Temperature))
     
     return es
 
