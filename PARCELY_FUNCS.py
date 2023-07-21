@@ -31,7 +31,9 @@ Rd      = 287.0         # Gas constant of dry air, J/kg/K
 eta     = Rd/Rv
 kB      = 1.380649e-23  # Boltzmann constant, J/K
 NA      = 6.02214076e23 # Avogadro's number
-Rd_alt  = 8.20573e-5    # Ideal gas constant [m3 atm K-1 mol-1]
+Rd_alt  = 8.20573e-5    # Ideal gas constant, m3 atm/K/mol
+cpl     = 4220          # Isobaric heat capacity of water vapor, J/K
+cpi     = 2097          # Isobaric heat capacity of ice, J/K
 
 
 # =============================================================================
@@ -687,6 +689,36 @@ def TempEvolution(Temperature, Pressure, AmbSat, Updraft,
         (g*Updraft/cp - (L/(cp*rhoa))*GrowthRates.sum()/(Cubes*(1e-2)**3))*dt
     
     return Tnew
+
+
+@nb.njit
+def UpdraftUpdate(U0, T0, dt, Tp, mua, DropPop, InitZ, Pressure,
+                  AmbSat, Cubes):
+    """Function that takes into account hydrometeor loading by condensation of
+    liquid water only on the updraft velocity.
+    
+    U0          : m/s, initial updraft velocity
+    T0          : K, initial air temperature
+    Tp          : K, parcel temperature
+    mua         : kg/kg, condensate mixing ratio
+    DropPop     : Droplet array
+    InitZ       : m, initial parcel height
+    Pressure    : Pa
+    AmbSat      : %, saturation ratio
+    Output      : m/s."""
+    
+    # Ambient temperature, K
+    Ta = T0 - (g/cp)*(DropPop[:,1].mean() - InitZ)
+    # Condensate mixing ratio, kg/kg
+    mup = DropPop[:,3].sum()/((Cubes*(1e-2)**3)*AirDensity(Ta, 
+                                                           Pressure, AmbSat))
+    
+    # Buoyancy
+    B = (Tp/Ta)*(1 + mua) - (1 + mup)
+    
+    Unew = U0 + dt*g*B
+    
+    return Unew
 
 
 # =============================================================================
@@ -1727,20 +1759,21 @@ def MolecularCorridor(Vols, RNG):
 
 def DataSaver(DataList, Name, CoCond):
     """Function to save output data stored in DataList as npy files:
-    0 : Droplet data
-    1 : Solute data
-    2 : Critical radius/saturation
-    3 : Organic aerosol parameters
-    4 : Organic aerosol data
-    5 : Saturation
-    6 : Temperature
-    7 : Pressure
-    8 : Mean height
-    9 : Time."""
+    0  : Droplet data
+    1  : Solute data
+    2  : Critical radius/saturation
+    3  : Organic aerosol parameters
+    4  : Organic aerosol data
+    5  : Saturation
+    6  : Temperature
+    7  : Pressure
+    8  : Mean height
+    9  : Updraft velocity
+    10 : Time."""
     
     # Files = ['DropOutput', 'Solute', 'CritParams', 'OAParams', 
     #          'ChemData', 'SatTime', 'TempTime', 'PressTime', 
-    #          'HeightTime', 'Time']
+    #          'HeightTime', 'UpTime', 'Time']
     
     if CoCond == True:
         np.savez(Name+'.npz', DropOutput=DataList[0], Solute=DataList[1],
@@ -1748,14 +1781,14 @@ def DataSaver(DataList, Name, CoCond):
                  OAParams=DataList[4], ChemData=DataList[5], 
                  SatTime=DataList[6], TempTime=DataList[7], 
                  PressTime=DataList[8], HeightTime=DataList[9], 
-                 Time=DataList[10], MontVars=DataList[11])
+                 UpTime=DataList[10], Time=DataList[11], MontVars=DataList[12])
         
     else:
         np.savez(Name+'.npz', DropOutput=DataList[0], Solute=DataList[1],
                  CritParams=DataList[2], SatTime=DataList[3], 
                  TempTime=DataList[4], PressTime=DataList[5], 
-                 HeightTime=DataList[6], Time=DataList[7],
-                 MontVars=DataList[8])
+                 HeightTime=DataList[6], UpTime=DataList[7], Time=DataList[8],
+                 MontVars=DataList[9])
     return
 
 
@@ -1767,10 +1800,12 @@ def DataSaver(DataList, Name, CoCond):
 def Simulator(DropPop, DropTrack, Solutes, dt, EnvEvolve, T, P, DomainZLims, 
              Updraft, Sdt, Pdt, Tdt, Zlims, Cubes, ac, at, S, SoluteFilter,
              OAParameters, SolTrack, ChemData, CoCond, RunTime, Instances, 
-             Time, BreakTime, mtol, DTs, ErrTrack, SurfMode, sft):
+             Time, BreakTime, mtol, DTs, ErrTrack, SurfMode, sft, InitZ,
+             Updt, Loading):
     
-    # Save initial time as reference temperature for organics
+    # Save initial time as reference temperature and updraft velocity
     Tref = T
+    U0 = Updraft
     
     # Initialize time tracking
     time = 0
@@ -1857,6 +1892,10 @@ def Simulator(DropPop, DropTrack, Solutes, dt, EnvEvolve, T, P, DomainZLims,
             T = TempEvolution(T, P, S, Updraft, DropPop[:,6], dt, Cubes)
             # Update saturation ratio grid field
             S = EnvSatTime(T, P, S, Updraft, DropPop[:,6], dt, Cubes)
+            if Loading is True:
+                # Update updraft velocity due to hydrometeor loading
+                Updraft = UpdraftUpdate(U0, Tref, dt, T, 0, DropPop, InitZ,
+                                        P, S, Cubes)
         
         # Update time-step size
         dt = Ndt
@@ -1875,6 +1914,7 @@ def Simulator(DropPop, DropTrack, Solutes, dt, EnvEvolve, T, P, DomainZLims,
                 Sdt[i]    = S
                 Tdt[i]    = T
                 Pdt[i]    = P
+                Updt[i]   = Updraft
                 Zlims[i,:] = DomainZLims
                             
                 if CoCond is True:
