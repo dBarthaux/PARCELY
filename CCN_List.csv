@@ -1,0 +1,22 @@
+Name,ChemName,Molar Mass (g/mol),Density (kg/m3),Kappa (CCN)
+Ammonium Sulfate,(NH4)2 SO4,132.14,1770,0.61
+Ammonium Nitrate,NH4NO3,80.043,1720,0.67
+Sodium Chloride,NaCl,58.44,2160,1.28
+Sulfuric Acid,H2SO4,98.079,1830,0.9
+Sodium Nitrate,NaNO3,84.99,2260,0.88
+Sodium Bisulfate,NaHSO4,120.06,2740,0.91
+Sodium Sulfate,Na2SO4,142.04,2660,0.8
+Letovicite,(NH4)3H(SO4)2,247.24,,0.65
+Malonic Acid,C3H4O4,104.06,1620,0.227
+Glutaric Acid,C3H6(COOH)2,132.12,1429,
+Glutamic Acid,C5H9NO,147.13,1460,
+Succinic Acid,C4H6O4,118.09,1560,0.231
+Adipic Acid,C6H10O4,146.14,1360,0.096
+Levoglucosan,C6H10O5,162.14,1690,0.208
+Phthalic Acid,C8H6O4,166.14,1590,0.051
+Homophthalic Acid,C9H8O4,180.15,1392,0.094
+Leucine,C6H13NO2,131.17,,0.002
+Pinic Acid,C9H14O4,186.2,1200,0.248
+Pinonic Acid,C10H1603,184.23,1100,0.106
+alpha-Pinene,C10H16,136.238,858,0.1
+ToppingBane,BeepBoop,200,1400,0.1
