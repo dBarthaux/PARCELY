@@ -34,6 +34,8 @@ RNG = np.random.default_rng(SeedNo)
 
 # Allow environment to change or not
 EnvEvolve = True
+# Allow hydrometeor loading and buoyancy
+Loading = False
 # Set initial pressure (Pa), from which domain height is set
 P = 900.0e2
 InitZ = 8.5e3*np.log(1013.25e2/P)
@@ -44,7 +46,7 @@ S = 0.96801
 # Define boundaries
 DomainZLims = np.array([0, BoxHeight], dtype='float64')+InitZ
 # Updraft velocity, m/s
-Updraft = 0.32
+Updraft = 1.0
 # Mass/thermal accommodation coefficients for kinetic effects
 ac = 0.2
 at = 0.2
@@ -77,7 +79,7 @@ Modes = ['OrgFilm', 'Constant', 'MixRule', 'WaterTemp']
 # Surface tension of pure water J/m^2
 sft = 0.072
 # Selected method
-SurfMode = Modes[0]
+SurfMode = Modes[3]
 
 # Total concentration (all phases), ug/m3
 Scaling = 1
@@ -116,26 +118,26 @@ OAParameters = DF.OrganicsArray(MoMass, Concentrations, Kappas,
 # Dirichlet mass fractions for non-monotone distribution
 Dirichlet = False
 # Allow organics
-Organics = True
+Organics = False
 # Allow co-condensation
 CoCond = False
 # Allow distribution in kappa values
 KappaRand = False
 
 # Distribution type
-Distribution = 'lognormal'
+Distribution = 'mono'
 # Number concentrations
-Ns = np.array([226,134])*Cubes
+Ns = np.array([200])*Cubes
 # Mean radii, um
-Rs = np.array([0.0196, 0.0695])
+Rs = np.array([0.05])
 # Standard deviations, um
-Stds = np.array([1.71, 1.7])
+Stds = np.array([1])
 # Inorganics indices from CSV
-Inorgs = np.array([[0],[2]])
+Inorgs = np.array([[0]])
 # Population percentage of each inorganic
-InorgPopPerc = np.array([[100],[100]])
+InorgPopPerc = np.array([[100]])
 # Organics in condensed phase from OAParameter table
-Orgs = [[0],[0]]
+Orgs = [[],[]]
 
 # If irrelevant, set to 0
 PercCond = 0
@@ -143,7 +145,7 @@ OrgBase = np.array([100, 100, 100, 99, 99, 90, 45, 12, 1, 0.1])
 
 OrgMFr = RNG.dirichlet(OrgBase, 1).reshape(10)*(1-0.6)
 # Solute mass fractions (inorganic + organic)
-MassFractions = [np.array([0.8, 0.2]), np.array([0.8, 0.2])] 
+MassFractions = [np.array([1]), np.array([1])] 
 
 # Number of droplets
 NumberDrops = Ns.sum()
@@ -201,15 +203,18 @@ Test = DF.WaterSurfaceTension(T)
 Sdt     = np.zeros(M+1)     # Saturation
 Tdt     = np.zeros(M+1)     # Temperature
 Pdt     = np.zeros(M+1)     # Pressure
+Updt    = np.zeros(M+1)     # Updraft
 
 Sdt[:]  = np.nan
 Tdt[:]  = np.nan
 Pdt[:]  = np.nan
+Updt[:] = np.nan
 
 # Initial conditions
-Sdt[0] = S
-Tdt[0] = T
-Pdt[0] = P
+Sdt[0]  = S
+Tdt[0]  = T
+Pdt[0]  = P
+Updt[0] = Updraft
 
 # Droplet and Solute Tracker
 DropTrack = np.empty(shape=(NumberDrops, 8, M+1))
@@ -257,7 +262,8 @@ start = time.time()
 DF.Simulator(DropPop, DropTrack, Solutes, dt, EnvEvolve, T, P, DomainZLims, 
               Updraft, Sdt, Pdt, Tdt, Zlims, Cubes, ac, at, S, SoluteFilter,
               OAParameters, SolTrack, ChemData, CoCond, RunTime, Instances, 
-              Time, BreakTime, mtol, DTs, ErrTrack, SurfMode, sft)
+              Time, BreakTime, mtol, DTs, ErrTrack, SurfMode, sft, InitZ, Updt,
+              Loading)
 
 end = time.time()
 print('Model Run: ', end - start, 's')
@@ -283,13 +289,13 @@ if CoCond == True:
 
     AllData = np.array([DropTrack, SolTrack, SoluteFilter, CritParams, 
                         OAParameters, ChemData, Sdt, Tdt, Pdt, 
-                        MeanHeight-InitZ, Time, RunParams], dtype=object)
+                        MeanHeight-InitZ, Updt, Time, RunParams], dtype=object)
 
 else:
     AllData = np.array([DropTrack, 
                         SolTrack[:,:,0].reshape(NumberDrops,Solutes.shape[1],1), 
                         CritParams, Sdt, Tdt, Pdt, 
-                        MeanHeight-InitZ, Time, RunParams], dtype=object)
+                        MeanHeight-InitZ, Updt, Time, RunParams], dtype=object)
 
 
 # =============================================================================
