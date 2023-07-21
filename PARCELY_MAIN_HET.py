@@ -46,6 +46,8 @@ CollCoal = True
 
 # Allow environment to change or not
 EnvEvolve = True
+# Allow hydrometeor loading and buoyancy
+Loading = True
 # Set initial pressure (Pa), from which domain height is set
 P = 900.0e2
 InitZ = 8.5e3*np.log(1013.25e2/P)
@@ -244,6 +246,10 @@ Sdt[0,:,:,:]  = SatField
 Tdt[0,:,:,:] = TempField
 Pdt[0,:,:,:] = PressField
 
+Updt    = np.zeros(M+1)     # Updraft
+Updt[:] = np.nan
+Updt[0] = Updraft[2]
+
 # Droplet and Solute Tracker
 DropTrack = np.empty(shape=(NumberDrops, 12, M+1))
 SolTrack = np.empty(shape=(NumberDrops, Solutes.shape[1], M+1))
@@ -294,7 +300,8 @@ DF.SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
               OAParameters, SolTrack, ChemData, CoCond, RunTime,
               Instances, Time, BreakTime, mtol, DTs, ErrTrack,
               tolTrack, SurfMode, SatGrid, SatDivide, SatInd, SatField,
-              sft, Diffusion, DropMove, SizeThreshold, k, CollCoal)
+              sft, Diffusion, DropMove, SizeThreshold, k, CollCoal, InitZ,
+              Updt, Loading)
 
 
 end = time.time()
@@ -334,4 +341,4 @@ else:
 # Data Saving
 # =============================================================================
 
-# DF.DataSaver(AllData, 'File', CoCond)
+# DF.DataSaver(AllData, 'Save1', CoCond)
