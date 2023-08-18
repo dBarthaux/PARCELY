@@ -1571,7 +1571,7 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
         
         # Adjusted for mass accommodation effects, alpha=0.1 (Sahle et al 2013)           
         Dact = OAParameters[i,2]/(DropArray[:,4]/(DropArray[:,4] + \
-                    (1.12e-7)/2) + (OAParameters[i,2]/(1.0*DropArray[:,4]))*\
+                    (1.12e-7)/2) + (OAParameters[i,2]/(0.1*DropArray[:,4]))*\
                         np.sqrt(2.0*np.pi*OAParameters[i,0]/(R*T)))
         
         CSurfmeans[i] = np.mean(Csurf[:,i])
