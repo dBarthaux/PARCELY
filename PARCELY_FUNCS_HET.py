@@ -33,8 +33,8 @@ eta     = Rd/Rv
 kB      = 1.380649e-23  # Boltzmann constant, J/K
 NA      = 6.02214076e23 # Avogadro's number
 Rd_alt  = 8.20573e-5    # Ideal gas constant [m3 atm K-1 mol-1]
-cpl     = 4220          # Isobaric heat capacity of water vapor, J/K
-cpi     = 2097          # Isobaric heat capacity of ice, J/K
+cpl     = 4220          # Isobaric heat capacity of liquid water, J/kg/K
+cpi     = 2097          # Isobaric heat capacity of ice, J/kg/K
 
 
 # =============================================================================
@@ -580,7 +580,7 @@ def LatentHeatEvap(Temperature, T0=273.16, cpv=2040, L0=2.501e6):
 
 @nb.njit
 def LatentHeatSub(Temperature, T0=273.16, cpv=1885, L0=2.260e6):
-    """Latent heat of condensation from Ambaum (2020).
+    """Latent heat of sublimation from Ambaum (2020).
     
     Temperature : K (Ambient temperature)
     T0          : K (Temperature at triple point)
