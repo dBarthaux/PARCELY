@@ -15,6 +15,7 @@ import numpy as np
 import PARCELY_FUNCS as DF
 import time
 
+
 # =============================================================================
 # Domain Set-Up
 # =============================================================================
@@ -37,10 +38,10 @@ EnvEvolve = True
 # Allow hydrometeor loading and buoyancy
 Loading = False
 # Set initial pressure (Pa), from which domain height is set
-P = 900.0e2
+P = 1000.0e2
 InitZ = 8.5e3*np.log(1013.25e2/P)
 # Starting Temperature, K
-T = 283
+T = 298.15
 # Initial saturation, %
 S = 0.96801
 # Define boundaries
@@ -67,7 +68,7 @@ Instances = np.arange(0, RunTime+RunTime/M, RunTime/M)
 # Actually measured time instances
 Time = np.zeros_like(Instances)
 # Tolerance for Runge-Kutta Cash-Karp adaptive time-step scheme
-mtol = 1e-23
+mtol = 1e-21
 
 
 # =============================================================================
@@ -79,21 +80,22 @@ Modes = ['OrgFilm', 'Constant', 'MixRule', 'WaterTemp']
 # Surface tension of pure water J/m^2
 sft = 0.072
 # Selected method
-SurfMode = Modes[3]
+SurfMode = Modes[0]
 
 # Total concentration (all phases), ug/m3
 Scaling = 1
-Concentrations = np.array([0.1])
+Concentrations = np.array([0.1, 0.1, 0.25, 0.5, 0.9, 1.2])
 
 # Volatility/Saturation Concentration, ug/m3
-LogVols = np.arange(-6, -5, 1, dtype=np.float64)
+LogVols = np.arange(-2, 4, 1, dtype=np.float64)
 Cstar = 10.0**(LogVols)
 
 # Organic parameters
 # Surface tension, J/m2
 SurfTension = 0.04*np.ones(Concentrations.size)
 
-EstimateParameters = False
+EstimateParameters = True
+BATMode = False
 
 if EstimateParameters is False:
     # unitless
@@ -102,9 +104,12 @@ if EstimateParameters is False:
     Densities = np.ones(Concentrations.size)*852
     # kg/mol
     MoMass = np.ones(Concentrations.size)*256.4e-3
+    # Activity coefficients
+    ActCoeff = np.ones(Concentrations.size)*1
 
 if EstimateParameters is True:
-    MoMass, Densities, Kappas = DF.MolecularCorridor(LogVols, RNG)
+    MoMass, Densities, Kappas, ActCoeff = DF.MolecularCorridor(LogVols, RNG,
+                                                             BATMode)
 
 # OA parameter table
 OAParameters = DF.OrganicsArray(MoMass, Concentrations, Kappas,
@@ -118,34 +123,35 @@ OAParameters = DF.OrganicsArray(MoMass, Concentrations, Kappas,
 # Dirichlet mass fractions for non-monotone distribution
 Dirichlet = False
 # Allow organics
-Organics = False
+Organics = True
 # Allow co-condensation
-CoCond = False
+CoCond = True
 # Allow distribution in kappa values
 KappaRand = False
 
 # Distribution type
-Distribution = 'mono'
+Distribution = 'lognormal'
 # Number concentrations
-Ns = np.array([200])*Cubes
+Ns = np.array([125,65])*Cubes
 # Mean radii, um
-Rs = np.array([0.05])
+Rs = np.array([0.011, 0.060])
 # Standard deviations, um
-Stds = np.array([1])
+Stds = np.array([1.2, 1.7])
 # Inorganics indices from CSV
-Inorgs = np.array([[0]])
+Inorgs = np.array([[0],[0]])
 # Population percentage of each inorganic
-InorgPopPerc = np.array([[100]])
+InorgPopPerc = np.array([[100],[100]])
 # Organics in condensed phase from OAParameter table
-Orgs = [[],[]]
+Orgs = [[0,1,2,3,4,5],[0,1,2,3,4,5]]
 
 # If irrelevant, set to 0
 PercCond = 0
-OrgBase = np.array([100, 100, 100, 99, 99, 90, 45, 12, 1, 0.1])
+OrgBase = np.array([100, 99, 90, 45, 1, 0.1])
 
-OrgMFr = RNG.dirichlet(OrgBase, 1).reshape(10)*(1-0.6)
+InorgMFr = 0.6
+OrgMFr = RNG.dirichlet(OrgBase, 1).reshape(OrgBase.size)*(1-InorgMFr)
 # Solute mass fractions (inorganic + organic)
-MassFractions = [np.array([1]), np.array([1])] 
+MassFractions = [np.append(InorgMFr, OrgMFr), np.append(InorgMFr, OrgMFr)] 
 
 # Number of droplets
 NumberDrops = Ns.sum()
@@ -192,9 +198,6 @@ end = time.time()
 print('Droplets Initialization: ', np.round(end - start, 4), 's')
 
 
-Test = DF.WaterSurfaceTension(T)
-
-
 # =============================================================================
 # Tracking Data
 # =============================================================================
@@ -237,7 +240,7 @@ Zlims = np.zeros(shape=(M+1,2))
 Zlims[0,:] = DomainZLims
 
 ChemData = np.zeros((4, Concentrations.size, M+1))
-ChemData[:,:,0] = DF.Cocondense(T, T, OAParameters, DropPop, 
+ChemData[:,:,0] = DF.Cocondense(T, T, OAParameters, DropPop, ActCoeff, BATMode,
                             Solutes, SoluteFilter, dt, Cubes)[2]
 
 BreakTime = np.zeros(1).astype(np.int32)
@@ -263,7 +266,7 @@ DF.Simulator(DropPop, DropTrack, Solutes, dt, EnvEvolve, T, P, DomainZLims,
               Updraft, Sdt, Pdt, Tdt, Zlims, Cubes, ac, at, S, SoluteFilter,
               OAParameters, SolTrack, ChemData, CoCond, RunTime, Instances, 
               Time, BreakTime, mtol, DTs, ErrTrack, SurfMode, sft, InitZ, Updt,
-              Loading)
+              Loading, ActCoeff, BATMode)
 
 end = time.time()
 print('Model Run: ', end - start, 's')
@@ -302,4 +305,4 @@ else:
 # Data Saving
 # =============================================================================
 
-# DF.DataSaver(AllData, 'Save1', CoCond)
+# DF.DataSaver(AllData, 'WithoutCoeff', CoCond)

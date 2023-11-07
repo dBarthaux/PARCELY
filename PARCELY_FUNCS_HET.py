@@ -33,8 +33,8 @@ eta     = Rd/Rv
 kB      = 1.380649e-23  # Boltzmann constant, J/K
 NA      = 6.02214076e23 # Avogadro's number
 Rd_alt  = 8.20573e-5    # Ideal gas constant [m3 atm K-1 mol-1]
-cpl     = 4220          # Isobaric heat capacity of liquid water, J/kg/K
-cpi     = 2097          # Isobaric heat capacity of ice, J/kg/K
+cpl     = 4220          # Isobaric heat capacity of water vapor, J/K
+cpi     = 2097          # Isobaric heat capacity of ice, J/K
 
 
 # =============================================================================
@@ -580,7 +580,7 @@ def LatentHeatEvap(Temperature, T0=273.16, cpv=2040, L0=2.501e6):
 
 @nb.njit
 def LatentHeatSub(Temperature, T0=273.16, cpv=1885, L0=2.260e6):
-    """Latent heat of sublimation from Ambaum (2020).
+    """Latent heat of condensation from Ambaum (2020).
     
     Temperature : K (Ambient temperature)
     T0          : K (Temperature at triple point)
@@ -1482,9 +1482,11 @@ def CritParamFinder(Solutes, Temperature, AmbSat):
     
     for n in range(DropCount):
         # Find the critical supersaturation and critical radius
-        CritParams[n,:] = fmin(KapKrit, Solutes[n,1]*1.0000001, 
+        Params = fmin(KapKrit, Solutes[n,1]*1.0000001, 
                                args=(Solutes[n,1], A, Solutes[n,5]), 
                                full_output=True, disp=0)[:2]
+        
+        CritParams[n,:] = Params[0][0], Params[1]
         
         # Using the critical radius as an upper limit, find the equilibrium
         # radius for the given ambient saturation.
@@ -2250,16 +2252,15 @@ def SatCondTempFunc(Temperature, Concentration, Tref):
     # Delh_vap, enthalpy of vaporization term parameterization, in J/mol
     # from the same paper/Epstein et al (2009)
     DelH = (131 - 11*np.log10(Concentration))*1e3
-    
     # New saturation concentration, ug/m3
     NewC = Concentration*(Tref/Temperature)*\
-            np.exp(-(DelH/R)*(1/Temperature - 1/Tref))
+                np.exp(-(DelH/R)*(1/Temperature - 1/Tref))
     
     return NewC
 
 
-@nb.njit(cache=True)
-def Cocondense(Temperature, Tref, OAParameters, DropArray, 
+@nb.njit(cache=True, parallel=True, nogil=True)
+def Cocondense(Temperature, Tref, OAParameters, DropArray, Coeffs, BATMode,
                 SoluteArray, SoluteDry, dt, Cubes):
     
     """Function to calculate the condensation equation for each organic species
@@ -2270,6 +2271,8 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
                       simulation)
     OAParameters    : Organics parameter array
     DropArray       : Water data array
+    Coeffs          : Array of polynomial coeffs. for the activity coeffs.
+    BATMode         : Boolean, if BAT is used to calculate activity coeffs.
     SoluteArray     : Solute data array
     SoluteDry       : Dry solute array
     dt              : s (Time-step size)
@@ -2292,6 +2295,16 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
     x = DropMoleFrac(DropArray[:,7], SoluteDry[:,2], SoluteArray[:,6:], 
                       SoluteArray[:,3], OAParameters[:,0])
     
+    if BATMode is True:
+        gi = np.zeros_like(x)
+        # Calculate activity coefficients of each organic in each droplet
+        for i in nb.prange(x.shape[0]):
+            for j in nb.prange(x.shape[1]):
+                gi[i,j] = ManualPolynomial(Coeffs[j], x[i,j])
+    
+    else:
+        gi = np.ones_like(x)
+    
     # Kelvin effect factor
     KelFactor = np.zeros_like(x)
     # Equilibrium pressure at particle surface
@@ -2310,7 +2323,7 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
         # Kelvin effect
         KelFactor[:,i] = np.exp((2*DropArray[:,11]/(R*T*DropArray[:,8]))*MolVol)
         # Equilibrium pressure
-        EquiPress[:,i] = x[:,i]*P_sat[i]*KelFactor[:,i]
+        EquiPress[:,i] = x[:,i]*P_sat[i]*KelFactor[:,i]*gi[:,i]
     
     # Equilibrium concentration at particle surface in molecules/cm^3
     Csurf = EquiPress*(NA/(Rd_alt*1.0e6*T))
@@ -2332,14 +2345,16 @@ def Cocondense(Temperature, Tref, OAParameters, DropArray,
         xmeans[i] = np.mean(x[:,i])
 
         # Growth rate per droplet, in kg/s
-        dmdt[:,i] = (4*np.pi*DropArray[:,8]*1e2*Dact*1e4*(C[i] - Csurf[:,i]))*\
-                    OAParameters[i,0]/NA
+        dmdt[:,i] = (4*np.pi*DropArray[:,8]*1e2*Dact*1e4*\
+                      (C[i] - Csurf[:,i]))*OAParameters[i,0]/NA
     
     # Total growth rate for OA in kg/cm^3/s
     NewConc = np.where(OAParameters[:,4] - dt*(dmdt.sum(axis=0))*1.0e6*1.0e9 \
-                       < OAParameters[:,7], 
-                       OAParameters[:,4] - dt*(dmdt.sum(axis=0))*1.0e6*1.0e9, 
-                       OAParameters[:,7])
+                        < OAParameters[:,7], 
+                        OAParameters[:,4] - dt*(dmdt.sum(axis=0))*1.0e6*1.0e9, 
+                        OAParameters[:,7])
+    
+    NewConc = np.zeros(6)
     
     DatChem = np.zeros((4, C.size))
     DatChem[0,:] = C
@@ -2479,34 +2494,139 @@ def KappaSigmoidFit(OCRatio):
     return sigmoidal_kappa
 
 
-def MolecularCorridor(Vols, RNG):
+def BAT_Light(x_org, M_org, OtoC, HtoC, rho_org):
+    
+    """Python function of the BAT_LIGHT model, which is a simplified version of
+    the BAT model described and developed by Gorkowski, Preston, and Zuend
+    (2019). BAT_LIGHT was taken from Chapter 3 of Introduction to Aerosol 
+    Modelling: From Theory to Code (2022).
+    
+    x_org   : Mole fraction of the organic
+    M_org   : Molar mass of the organic [kg/mol]
+    OtoC    : Oxygen-to-Carbon ratio of the organic
+    HtoC    : Hydrogen-to-Carbon ratio of the organic
+    rho_org : Density of the organic [kg/m^3]
+    
+    Returns: Arrays of polynomial coefficients, ascending (0,1,2...)."""
+
+
+    # Parameters
+    s1 = 4.06991
+    s2 = -1.23723
+    
+    # More parameters
+    apar = np.array([[5.88511, -0.98490], [-4.73125, -6.22721],
+                     [-5.20165, 2.32029], [-30.8230, -25.8404]])
+    
+    cpar = np.zeros(2)
+    
+    # Initializing arrays for results
+    ln_actcoeff = np.zeros(shape=(x_org.size, 2))
+    # activities = np.zeros_like(ln_actcoeff)
+
+    # Step 1) Calculate recurring equation terms and model coefficients
+    M_ratio = Mw/M_org
+    phi_param = (rho_org/rhoL)*M_ratio*s1*(1.0 + OtoC)**s2
+    # Eq. (3.13):
+    phi_org = x_org/(x_org + (1.0 - x_org)*phi_param)
+    # Eq. (3.15):
+    cpar[:] = apar[0,:]*np.exp(apar[1,:]*OtoC) + \
+              apar[2,:]*np.exp(apar[3,:]*M_ratio)
+
+    # Step 2) Calculate normalized Gibbs excess energy term and its derivative
+    one_minus_2phi = 1.0 - 2.0*phi_org
+    GEbyRT = phi_org*(1.0 - phi_org)*(cpar[0] + cpar[1]*one_minus_2phi)
+    
+    # Express (phi_org/x_org) in form avoiding division by zero:
+    phi_by_x = 1.0/(x_org + (1.0 - x_org)*phi_param)
+    dGEbyRT_dxorg = (one_minus_2phi*(cpar[0] + cpar[1]*one_minus_2phi) \
+                    -2.0*cpar[1]*phi_org*(1.0 - phi_org))*phi_param*phi_by_x**2
+        
+    # Step 3) Calculate natural log of activity coefficients and activities
+    # Eqs. (3.11, 3.12):
+    # ln_actcoeff[:,0] = GEbyRT - x_org*dGEbyRT_dxorg
+    ln_actcoeff[:,1] = GEbyRT + (1.0 - x_org)*dGEbyRT_dxorg
+    # activities[:,0] = (1.0 - x_org)*np.exp(ln_actcoeff[:,0])  # water
+    # activities[:,1] = x_org*np.exp(ln_actcoeff[:,1])          # organic
+    
+    # Get the coefficients to a 9th order polynomial to 
+    # the accommodation coefficient
+    Coefficients = np.flip(np.polyfit(x_org, ln_actcoeff[:,1], 15))
+    
+    return Coefficients
+
+
+def MolecularCorridor(Vols, RNG, BATMode):
     """Function to create approximate values for a given input of volatilities
     (C*), based off of the molecular corridor approach detailed in Sharaiwa et
     al. (2014).
     
     Vols : ug/m3 (Volatilities/log10 of Saturation Concentration)
     RNG : Numpy random generator, object
+    BATMode : Trigger to use BAT_LIGHT to calculate a 
+              variable activity coefficient
+    
     Output: 
     (1) kg/mol (Molar mass) 
     (2) kg/m3 (Density)
-    (3) Unitless (hygroscopicity)"""
+    (3) Unitless (hygroscopicity)
+    (4) Unitless (Activity coefficient polynomial coefficients)"""
     
     # Molar mass maxima
     Mmax = -30*Vols + 360
     # Molar mass minima
     Mmin = -10*Vols + 140
     # Create randomly selected molar masses
-    MoMass = RNG.uniform(Mmin, Mmax, (1, Vols.size)).reshape(Vols.size)
+    MoMass = RNG.normal(0.5*(Mmin+Mmax), 20, 
+                        size=(1, Vols.size)).reshape(Vols.size)*1e-3
     # Attain assumed O:C ratio
-    OCRatio = 1 - (MoMass - Mmin)/(Mmax-Mmin)
+    OCRatio = 1 - (MoMass*1e3 - Mmin)/(Mmax-Mmin)
     # Get H:C ratio using approximation from Heald et al. (2010)
     HCRatio = 2 - OCRatio
     # Get density using approximation from Kuwata et al. (2012)
-    rho = 1000*(12 + HCRatio + 16*OCRatio)/(7 + 5*HCRatio + 4.15*OCRatio)
+    rho = 1e3*(12 + HCRatio + 16*OCRatio)/(7 + 5*HCRatio + 4.15*OCRatio)
     # Approximate kappa using a sigmoidal kappa function
     k = KappaSigmoidFit(OCRatio)
     
-    return MoMass, rho, k
+    if BATMode is True:
+        # Get a polynomial parameterization of the binary mixture of water and the
+        # organic using the BAT_LIGHT model
+        x_org = np.linspace(0, 1, 101)
+        # Initialize array
+        Coeffs = np.zeros((Vols.size, 16))
+        
+        for v in range(Vols.size):
+        # Get polynomial coefficients for the accommodation coefficient
+            Coeffs[v,:] = BAT_Light(x_org, MoMass[v], OCRatio[v], 
+                                    HCRatio[v], rho[v])
+    
+    else:
+        # Return a constant activity coefficient of 1
+        Coeffs = np.ones((Vols.size, 16))
+        
+    return MoMass, rho, k, Coeffs
+
+
+@nb.njit
+def ManualPolynomial(Coefficients, MoleFrac):
+    """An alternative to numpy's poly1d "class" (treating it like a function)
+    to calculate the result of a polynomial at a given point, specifically for
+    calculating the activity coefficient of an organic at a given mole
+    fraction.
+    
+    Coefficients    : Polynomial coefficients, ascending order (0,1,2...)
+    MoleFrac        : The mole fraction of the organic in the droplet.
+    
+    Returns: Polynomial solution of the activity coefficient 
+             at given mole fraction."""
+    
+    # Initialize solution at zero
+    Result = 0
+    # Loop over however many coefficients there are, sum them
+    for c in range(Coefficients.size):
+        Result += Coefficients[c]*MoleFrac**c
+        
+    return np.exp(Result)
 
 
 # =============================================================================
@@ -2561,7 +2681,7 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
               Instances, TimeTrack, BreakTime, mtol, DTS, ErrTrack,
               tolTrack, SurfMode, SatGrid, SatDivide, SatInd, SatField, sft, 
               Diffusion, DropMove, SizeThreshold, k, CollCoal, InitZ,
-              Updt, Loading):
+              Updt, Loading, Coeffs, BATMode):
     
     # Save initial time as reference temperature and updraft velocity
     Tref = TempField.mean()
@@ -2651,8 +2771,9 @@ def SimulatorF(DropPop, DropTrack, Solutes, OrigVertVel, dt, EnvEvolve,
                 
                 # Co-condensation of organics
                 TempOA, OAGrowth, Chems = \
-                        Cocondense(Temps, Tref, OAParameters, DropPop, 
-                                    Solutes, SoluteFilter, dt, Cubes)
+                        Cocondense(np.mean(Temps), Tref, OAParameters, DropPop, 
+                                   Coeffs, BATMode, Solutes, SoluteFilter, 
+                                   dt, Cubes)
                 # Changes to dry mass and size
                 TempSol2, TempSol4, TempSol1, TempSol6, TempSol5 = \
                     SoluteGrowth(Solutes, SoluteFilter, OAGrowth, 
