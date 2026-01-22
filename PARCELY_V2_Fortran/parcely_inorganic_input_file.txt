@@ -1,0 +1,28 @@
+Inorganic Solutes Input file for PARCELY_V2
+====================================== 
+Name, PopFractions, MolarMass, Density, Kappa
+AMSULF 1 1 132.14 1770 0.61
+
+*--------------------------------------------------
+
+SODCLR 0 1 58.440 2160 1.28
+
+Everything here is not read.
+
+Name must be six characters in length
+PopFractions are the fractions by count of the solute represented by the inorganic (X particles of the N in the population)
+MolarMass is in g/mol
+Density (liquid) is in kg/m3
+Kappa is unitless
+
+Table of common inorganics used for cloud physics
+
+Full Name				Formula		Molar Mass [g/mol]	Density [liquid; kg/m3], 	Kappa [-]
+|-------------------------------------------------------------------------------------------|
+Ammonium Sulfate		(NH4)2SO4		132.14				1770					0.61
+Ammonium Nitrate		NH4NO3			80.043				1720					0.67
+Sodium Chloride			NaCl			58.440				2160					1.28
+Sulfuric Acid			H2SO4			98.079				1830					0.90
+Sodium Nitrate			NaNO3			84.990				2260					0.88
+Sodium Bisulfate		NaHSO4			120.06				2740					0.91
+Sodium Sulfate			Na2SO4			142.04				2660					0.80

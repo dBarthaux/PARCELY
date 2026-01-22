@@ -1,0 +1,16 @@
+Organic Compounds Input file for PARCELY_V2
+====================================== 
+Name, Total, C0, MolarMass, Density, Kappa, Sigma
+ORGAN1 1 1e9 16.04 0.657 0.001, 30
+
+*--------------------------------------------------
+
+Everything here is not read.
+
+Name must be six characters in length
+Total is the total concentration of the organic in ug/m3
+C0 is the pure-component saturation concentration, in ug/m3
+MolarMass is in g/mol
+Density (liquid) is in kg/m3
+Kappa is unitless
+Sigma is the pure-component surface tension in mJ/m2
