@@ -1717,7 +1717,7 @@
     ! initialization. set the number of iteration as 0.
     ! set dumb values for the variables "e" and "fe".
     e  = huge(1.0_wp)
-    fe = huge(1.0_wp)
+    fe = sqrt(sqrt(huge(1.0_wp)))
 
     ! iteration starts. the enclosing interval before executing the
     ! iteration is recorded as [a0, b0].

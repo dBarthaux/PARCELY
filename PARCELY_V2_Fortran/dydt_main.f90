@@ -1,4 +1,4 @@
-module ODEquation
+module ODEquations
 
 contains
 
@@ -7,58 +7,67 @@ contains
 subroutine parcelydydt(me, neq, t, y, ydot)
     
 use dvode_module
-use dvode_kinds_module,     only: dvode_wp
-use ieee_arithmetic,        only: ieee_is_nan
+use dvode_kinds_module,     only: wp => dvode_wp
 use DropFuncs,              only: DropGrowthRate, DropletSurfaceTension
 use EnvEquations,           only: PressureTime, TemperatureTime, SaturationTime
 use SolFuncs,               only: SoluteUpdate, Cocondense
 use EnvironmentConstants,   only: Na, Mw, pi, rhoL
-use ModelParameters,        only: INCLUDE_ORGANICS, SoluteProperties, ndrop, norg, DropSurfTens, OrganicProperties
+use ModelParameters,        only: INCLUDE_ORGANICS, INCLUDE_COCONDENSE, SoluteProperties, ndrop, norg, DropSurfTens, OrganicProperties
 
 implicit none
 
 class(dvode_t), intent(inout)       :: me       ! Solver instance
 integer                             :: i, neq   !-, Number of equations
-real(dvode_wp)                      :: t, y(neq), ydot(neq), Tmp, Prs, RH, WetGrowthSums
-real(dvode_wp), dimension(ndrop)    :: WaterMass
-real(dvode_wp), allocatable         :: yorg(:,:), OrganicMass(:,:), dOrgdt(:,:)
+real(wp)                            :: t, y(neq), ydot(neq), Tmp, Prs, RH, WetGrowthSums
+real(wp), dimension(ndrop)          :: WaterMass
+real(wp), allocatable               :: yorgcond(:,:), OrganicGas(:), OrganicCond(:,:), dOrgConddt(:,:), dOrgGasdt(:), WaterRad(:), OriginalGas(:)
 
-allocate(yorg(ndrop,norg), OrganicMass(ndrop,norg), dOrgdt(ndrop,norg))
+allocate(yorgcond(ndrop,norg), OrganicGas(norg), OrganicCond(ndrop,norg), dOrgConddt(ndrop,norg), dOrgGasdt(norg), WaterRad(ndrop), OriginalGas(norg))
 
 ! Last 3 entries are temperature, pressure, and RH
 Tmp  = y(neq-2)
 Prs  = y(neq-1)
 RH   = y(neq)
 ! ydot is the array of values for dy/dt
-ydot = 0.0
+ydot = 0.0_wp
 
 if (INCLUDE_ORGANICS) then
-    yorg = RESHAPE(y(ndrop+1:neq-3), [ndrop, norg])
+    yorgcond = RESHAPE(y(ndrop+1:neq-3-norg), [ndrop, norg])
+    ! Gas-phase organic, molec/cm3
+    OrganicGas = y(neq-3-norg+1:neq-3)
     ! Extract the masses of each organic
     do i = 1, norg
-        OrganicMass(:,i) = yorg(:,i)
+        ! Condensed phase organic, molec
+        OrganicCond(:,i) = yorgcond(:,i)
     end do
 end if
 
-! Sum of growth rates for the environmental equations
-WetGrowthSums = 0.0
+WaterRad = EXP(y(1:ndrop))
+! Sum of growth rates for the environmental equations, kg/s
+WetGrowthSums = 0.0_wp
 ! Get water mass of each droplet, kg
-WaterMass = (4*pi/3)*rhoL*(y(1:ndrop)**3.0 - SoluteProperties(:,2)**3.0)
+WaterMass = (4_wp*pi/3_wp)*rhoL*(WaterRad**3 - SoluteProperties(:,2)**3)
 ! Update droplet surface tension
-call DropletSurfaceTension(Tmp, WaterMass, OrganicMass, y(1:ndrop))
+call DropletSurfaceTension(Tmp, WaterMass, OrganicCond, WaterRad)
 
-if (INCLUDE_ORGANICS) then
+! Comment this section out and rebuild if you want initial organics but no cocondensation
+if ((INCLUDE_ORGANICS) .and. (INCLUDE_COCONDENSE)) then
     ! Update mixture properties (kappa, density, molar mass)
-    call SoluteUpdate(OrganicMass)
+    call SoluteUpdate(OrganicCond)
     ! Calculate dm/dt of organics
-    call Cocondense(OrganicMass, Tmp, WaterMass, y(1:ndrop), dOrgdt)
-    ydot(ndrop+1:neq-3) = RESHAPE(dOrgdt, [ndrop*norg])
+    call Cocondense(OrganicCond, OrganicGas, WaterMass, WaterRad, Tmp, dOrgConddt, dOrgGasdt)
+    ydot(ndrop+1:neq-3-norg) = RESHAPE(dOrgConddt, [ndrop*norg])
+    ! ln rate
+    ydot(ndrop+1:neq-3-norg) = ydot(ndrop+1:neq-3-norg)
+    ydot(neq-3-norg+1:neq-3) = dOrgGasdt
 end if
-    
-! Loop to calculate dr/dt of water
+
+! Loop to calculate dr/dt of water, m/s
 do i = 1, ndrop
-    ydot(i) = DropGrowthRate(Tmp, Prs, RH, y(i), SoluteProperties(i,2), SoluteProperties(i,5), DropSurfTens(i))
-    WetGrowthSums = WetGrowthSums + ydot(i)*4*pi*rhoL*y(i)**2
+    ydot(i) = DropGrowthRate(Tmp, Prs, RH, WaterRad(i), SoluteProperties(i,2), SoluteProperties(i,5), DropSurfTens(i))
+    WetGrowthSums = WetGrowthSums + ydot(i)*4_wp*pi*rhoL*WaterRad(i)**2
+    ! ln rate
+    ydot(i) = ydot(i)/WaterRad(i)
 end do
     
 ! Compute atmospheric variable rates
@@ -68,4 +77,6 @@ ydot(neq)   = SaturationTime(Tmp, Prs, RH, WetGrowthSums)
 
 end subroutine parcelydydt
 
-end module ODEquation
+!==========================================================================================================================
+
+end module ODEquations

@@ -1,7 +1,7 @@
 module InputReader
 
-use dvode_kinds_module, only: dvode_wp
-use ModelParameters, only: W, ac, at, sftc, Msft, OrganicProperties, INCLUDE_ORGANICS
+use dvode_kinds_module, only: wp => dvode_wp
+use ModelParameters, only: Cubes, W, ac, at, sftc, Msft, OrganicProperties, INCLUDE_ORGANICS, INCLUDE_COCONDENSE
 
 contains
 
@@ -19,15 +19,15 @@ contains
 !*                                                                                      *
 !****************************************************************************************
 
-subroutine EnvReader(Prs, Tmp, RH, RunTime, dt, DistType, npops, DistConcs, DistRads, DistStds, Xi)
+subroutine EnvReader(Prs, Tmp, RH, RunTime, dt, ntsteps, DistType, npops, DistConcs, DistRads, DistStds, Xi, DistSeed)
 
 implicit none
 
 character(len=256)              :: line
-real(dvode_wp)                  :: Prs, Tmp, RH, RunTime, dt, Xi
-integer                         :: DistType, npops, ios
+real(wp)                        :: Prs, Tmp, RH, RunTime, dt, Xi, ntsteps
+integer                         :: DistType, npops, ios, DistSeed
 integer, allocatable            :: DistConcs(:)
-real(dvode_wp), allocatable     :: DistRads(:), DistStds(:)
+real(wp), allocatable           :: DistRads(:), DistStds(:)
 
 open(unit=10, file="parcely_env_input_file.txt", status="old", action="read")
 
@@ -40,6 +40,10 @@ do
     if (index(line, '[npops]') > 0) then
         read(line, *) npops
         allocate(DistConcs(npops), DistRads(npops), DistStds(npops))
+    else if (index(line, '[DistSeed]') > 0) then
+        read(line, *) DistSeed
+    else if (index(line, '[Cubes]') > 0) then
+        read(line, *) Cubes
     else if (index(line, '[Prs]') > 0) then
         read(line, *) Prs
     else if (index(line, '[Tmp]') > 0) then
@@ -56,6 +60,8 @@ do
         read(line, *) RunTime
     else if (index(line, '[dt]') > 0) then
         read(line, *) dt
+    else if (index(line, '[ntsteps]') > 0) then
+        read(line, *) ntsteps
     else if (index(line, '[DistType]') > 0) then
         read(line, *) DistType
     else if (index(line, '[DistConcs]') > 0) then
@@ -72,8 +78,13 @@ do
         read(line, *) sftc
     else if (index(line, '[INCLUDE_ORGANICS]') > 0) then
         read(line, *) INCLUDE_ORGANICS
+    else if (index(line, '[INCLUDE_COCONDENSE]') > 0) then
+        read(line, *) INCLUDE_COCONDENSE
     end if
 end do
+
+! Multiply concentration by number of cubic centimeters
+DistConcs = DistConcs*Cubes
 
 close(10)
 
@@ -101,7 +112,7 @@ integer, intent(in)                         :: npops
 character(len=256)                          :: line
 character(len=6)                            :: name
 integer                                     :: ios, i, ninorg, j
-real(dvode_wp), allocatable, intent(out)    :: InorganicProperties(:,:)
+real(wp), allocatable, intent(out)          :: InorganicProperties(:,:)
 
 open(unit=11, file="parcely_inorganic_input_file.txt", status="old", action="read")
 
@@ -128,7 +139,7 @@ do
     if (line(1:1) == '=' .or. line(1:9) == 'Inorganic' .or. line(1:4) == 'Name') cycle
     if (trim(line) == '') cycle
     
-    ! InorganicProperties order: MolarMass, Density, Kappa, PopFrac_n, PopFrac_n+1...
+    ! InorganicProperties order: MolarMass (g/mol), Density (kg/m3), Kappa, PopFrac_n, PopFrac_n+1...
     read(line, *, iostat=ios) name, (InorganicProperties(i, j+3), j=1,npops), &
                                    InorganicProperties(i,1), InorganicProperties(i,2), InorganicProperties(i,3)
     i = i + 1
@@ -136,7 +147,8 @@ end do
 
 close(11)
 
-InorganicProperties(:,1) = InorganicProperties(:,1)*1e-3
+! Convert molar mass from g/mol to kg/mol
+InorganicProperties(:,1) = InorganicProperties(:,1)*1e-3_wp
 
 end subroutine InorganicReader
 
@@ -154,13 +166,14 @@ end subroutine InorganicReader
 !*                                                                                      *
 !****************************************************************************************
 
-subroutine OrganicReader(OrganicNames)
+subroutine OrganicReader(OrganicNames, npops)
 
 implicit none
 
+integer, intent(in)                     :: npops
 character(len=256)                      :: line
 character(len=6)                        :: name
-integer                                 :: ios, norg, i
+integer                                 :: ios, norg, i, j
 character(6), allocatable, intent(out)  :: OrganicNames(:)
 
 open(unit=11, file="parcely_organic_input_file.txt", status="old", action="read")
@@ -177,7 +190,7 @@ do
 end do
 close(11)
 
-allocate(OrganicProperties(norg, 6))
+allocate(OrganicProperties(norg, 6+npops))
 allocate(OrganicNames(norg))
 
 open(unit=11, file="parcely_organic_input_file.txt", status="old", action="read")
@@ -188,18 +201,19 @@ do
     if (line(1:1) == '*') exit
     if (line(1:1) == '=' .or. line(1:7) == 'Organic' .or. line(1:4) == 'Name') cycle
     if (trim(line) == '') cycle
-    ! Total concentration, C0, Molar mass, Density, Kappa, Surface tension
+    ! Total concentration (ug/m^3), C0 (ug/m^3), Molar mass (g/mol), Density (kg/m^3), Kappa, Surface tension (mJ/m^2), Initial average particle mass fraction
     read(line, *, iostat=ios) OrganicNames(i), OrganicProperties(i,1), OrganicProperties(i,2), OrganicProperties(i,3), & 
-                                    OrganicProperties(i,4), OrganicProperties(i,5), OrganicProperties(i,6)
+                                    OrganicProperties(i,4), OrganicProperties(i,5), OrganicProperties(i,6), &
+                                    (OrganicProperties(i, j+6), j=1,npops)
     i = i + 1
 end do
 
 close(11)
 
 ! Convert molar mass from g/mol to kg/mol
-OrganicProperties(:,3) = OrganicProperties(:,3)*1e-3
+OrganicProperties(:,3) = OrganicProperties(:,3)*1e-3_wp
 ! Convert surface tension from mJ/m^2 to J/m^2
-OrganicProperties(:,6) = OrganicProperties(:,6)*1e-3
+OrganicProperties(:,6) = OrganicProperties(:,6)*1e-3_wp
 
 end subroutine OrganicReader
 

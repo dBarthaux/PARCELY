@@ -1,6 +1,6 @@
 module WaterFuncs
 
-use dvode_kinds_module, only: dvode_wp
+use dvode_kinds_module, only: wp => dvode_wp
 use EnvironmentConstants, only: cpl, cpi, Rv
 
 contains
@@ -20,18 +20,18 @@ contains
 !*                                                                                      *
 !****************************************************************************************
 
-function WaterSurfaceTension(T) result(Sigma)
+pure elemental function WaterSurfaceTension(T) result(Sigma)
 
 implicit none
 
-real(dvode_wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
-real(dvode_wp)              :: CritT    ! Critical temperature of water, Kelvin
-real(dvode_wp)              :: Tau      ! Dimensionless variable
-real(dvode_wp)              :: Sigma    ! Surface tension, J/m2
+real(wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
+real(wp)              :: CritT    ! Critical temperature of water, Kelvin
+real(wp)              :: Tau      ! Dimensionless variable
+real(wp)              :: Sigma    ! Surface tension, J/m2
 
-CritT = 647.15
-Tau = 1 - T/CritT
-Sigma = 241.322*(Tau**1.26)*(1 - 0.0589*(Tau**0.5) - 0.56917*Tau)*1e-3
+CritT = 647.15_wp
+Tau = 1_wp - T/CritT
+Sigma = 241.322_wp*(Tau**1.26_wp)*(1_wp - 0.0589_wp*(Tau**0.5_wp) - 0.56917_wp*Tau)*1e-3_wp
 
 end function WaterSurfaceTension
 
@@ -50,19 +50,19 @@ end function WaterSurfaceTension
 !*                                                                                      *
 !****************************************************************************************
     
-function LatentHeatEvap(T) result(LHEvap)
+pure elemental function LatentHeatEvap(T) result(LHEvap)
 
 implicit none
 
-real(dvode_wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
-real(dvode_wp)              :: T0       ! Temperature of water at its triple-point, Kelvin
-real(dvode_wp)              :: cpv      ! Isobaric mass heat capacity of water vapor, J/kg/K
-real(dvode_wp)              :: L0       ! Latent heat of vaporization at triple point, J/kg
-real(dvode_wp)              :: LHEvap   ! Latent heat of vaporization, J/kg
+real(wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
+real(wp)              :: T0       ! Temperature of water at its triple-point, Kelvin
+real(wp)              :: cpv      ! Isobaric mass heat capacity of water vapor, J/kg/K
+real(wp)              :: L0       ! Latent heat of vaporization at triple point, J/kg
+real(wp)              :: LHEvap   ! Latent heat of vaporization, J/kg
 
-T0  = 273.16
-cpv = 2040
-L0  = 2.501e6
+T0  = 273.16_wp
+cpv = 2040_wp
+L0  = 2.501e6_wp
 LHEvap = L0 - (cpl - cpv)*(T - T0)
 
 end function LatentHeatEvap
@@ -82,19 +82,19 @@ end function LatentHeatEvap
 !*                                                                                      *
 !****************************************************************************************
 
-function LatentHeatSub(T) result(LHSub)
+pure elemental function LatentHeatSub(T) result(LHSub)
 
 implicit none
 
-real(dvode_wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
-real(dvode_wp)              :: T0       ! Temperature of water at its triple-point, Kelvin
-real(dvode_wp)              :: cpv      ! Isobaric mass heat capacity of water vapor, J/kg/K
-real(dvode_wp)              :: L0       ! Latent heat of vaporization at triple point, J/kg
-real(dvode_wp)              :: LHSub    ! Latent heat of sublimation, J/kg
+real(wp), intent(in)  :: T        ! Ambient temperature of air, Kelvin
+real(wp)              :: T0       ! Temperature of water at its triple-point, Kelvin
+real(wp)              :: cpv      ! Isobaric mass heat capacity of water vapor, J/kg/K
+real(wp)              :: L0       ! Latent heat of vaporization at triple point, J/kg
+real(wp)              :: LHSub    ! Latent heat of sublimation, J/kg
 
-T0  = 273.16
-cpv = 1885
-L0  = 2.260e6
+T0  = 273.16_wp
+cpv = 1885_wp
+L0  = 2.260e6_wp
 LHSub = L0 - (cpi - cpv)*(T - T0)
 
 end function LatentHeatSub
@@ -114,28 +114,28 @@ end function LatentHeatSub
 !*                                                                                      *
 !****************************************************************************************
 
-function SatVapWater(T, Phase) result(SVPWater)
+pure elemental function SatVapWater(T, Phase) result(SVPWater)
 
 implicit none
 
-real(dvode_wp), intent(in)  :: T            ! Ambient temperature of air, Kelvin
+real(wp), intent(in)        :: T            ! Ambient temperature of air, Kelvin
 character(3), intent(in)    :: Phase        ! Phase of water, "ice" or "liq" for liquid
-real(dvode_wp)              :: T0           ! Temperature of water at its triple-point, Kelvin
-real(dvode_wp)              :: es0          ! Saturation vapor pressure at triple point, Pa
-real(dvode_wp)              :: cpvl         ! Isobaric mass heat capacity of vapor [liquid SVP], J/kg/K
-real(dvode_wp)              :: cpvi         ! Isobaric mass heat capacity of vapor [ice SVP], J/kg/K
-real(dvode_wp)              :: L0l          ! Latent heat of vaporization at triple point, J/kg
-real(dvode_wp)              :: L0i          ! Latent heat of sublimation at triple point, J/kg
-real(dvode_wp)              :: Ll           ! Latent heat of vaporization at T, J/kg
-real(dvode_wp)              :: Li           ! Latent heat of sublimation at T, J/kg
-real(dvode_wp)              :: SVPWater     ! Saturation vapor pressure of water vapor, Pa
+real(wp)                    :: T0           ! Temperature of water at its triple-point, Kelvin
+real(wp)                    :: es0          ! Saturation vapor pressure at triple point, Pa
+real(wp)                    :: cpvl         ! Isobaric mass heat capacity of vapor [liquid SVP], J/kg/K
+real(wp)                    :: cpvi         ! Isobaric mass heat capacity of vapor [ice SVP], J/kg/K
+real(wp)                    :: L0l          ! Latent heat of vaporization at triple point, J/kg
+real(wp)                    :: L0i          ! Latent heat of sublimation at triple point, J/kg
+real(wp)                    :: Ll           ! Latent heat of vaporization at T, J/kg
+real(wp)                    :: Li           ! Latent heat of sublimation at T, J/kg
+real(wp)                    :: SVPWater     ! Saturation vapor pressure of water vapor, Pa
 
-T0 = 273.16
-es0 = 611.655
-cpvl = 2040
-cpvi = 1885
-L0l = 2.501e6
-L0i = 2.260e6
+T0 = 273.16_wp
+es0 = 611.655_wp
+cpvl = 2040_wp
+cpvi = 1885_wp
+L0l = 2.501e6_wp
+L0i = 2.260e6_wp
 
 if (Phase == 'liq') then
     Ll = LatentHeatEvap(T)

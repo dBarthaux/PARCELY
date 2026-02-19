@@ -1,8 +1,8 @@
 module EnvEquations
 
-use dvode_kinds_module, only: dvode_wp
+use dvode_kinds_module, only: wp => dvode_wp
 use EnvironmentConstants, only: g, Rd, cp, Rv, eta
-use ModelParameters, only: W
+use ModelParameters, only: W, Cubes
 
 contains
 
@@ -21,17 +21,17 @@ contains
 !*                                                                                      *
 !****************************************************************************************
 
-function PressureTime(Tmp, Prs, RH) result (dPdt)
+pure elemental function PressureTime(Tmp, Prs, RH) result (dPdt)
 
 use AirFuncs, only: VirtualTemp
 
 implicit none
 
-real(dvode_wp), intent(in)  :: Tmp      ! Temperature, K
-real(dvode_wp), intent(in)  :: Prs      ! Pressure, Pa
-real(dvode_wp), intent(in)  :: RH       ! Relative humidity, -
-real(dvode_wp)              :: Tv       ! Virtual temperature, K
-real(dvode_wp)              :: dPdt     ! Change in pressure over time, Pa/s
+real(wp), intent(in)  :: Tmp      ! Temperature, K
+real(wp), intent(in)  :: Prs      ! Pressure, Pa
+real(wp), intent(in)  :: RH       ! Relative humidity, -
+real(wp)              :: Tv       ! Virtual temperature, K
+real(wp)              :: dPdt     ! Change in pressure over time, Pa/s
 
 Tv = VirtualTemp(Tmp, Prs, RH)
 dPdt = -g*Prs*W/(Rd*Tv)
@@ -53,24 +53,26 @@ end function PressureTime
 !*                                                                                      *
 !****************************************************************************************
 
-function TemperatureTime(Tmp, Prs, RH, WetGrowthSums) result(dTdt)
+pure elemental function TemperatureTime(Tmp, Prs, RH, WetGrowthSums) result(dTdt)
 
 use WaterFuncs, only: LatentHeatEvap
 use AirFuncs, only: DensityAir
 
 implicit none
 
-real(dvode_wp), intent(in)  :: Tmp              ! Temperature, K
-real(dvode_wp), intent(in)  :: Prs              ! Pressure, Pa
-real(dvode_wp), intent(in)  :: RH               ! Relative humidity, -
-real(dvode_wp), intent(in)  :: WetGrowthSums    ! Sum of condensational growth rates (water vapor) of the droplets, dm/dt [kg/s]
-real(dvode_wp)              :: L                ! Latent heat of evaporation (of water vapor), J/kg
-real(dvode_wp)              :: rhoA             ! Density of dry air, kg/m3
-real(dvode_wp)              :: dTdt             ! Change in temperature over time, K/s
+real(wp), intent(in)  :: Tmp              ! Temperature, K
+real(wp), intent(in)  :: Prs              ! Pressure, Pa
+real(wp), intent(in)  :: RH               ! Relative humidity, -
+real(wp), intent(in)  :: WetGrowthSums    ! Sum of condensational growth rates (water vapor) of the droplets, dm/dt [kg/s]
+real(wp)              :: L                ! Latent heat of evaporation (of water vapor), J/kg
+real(wp)              :: rhoA             ! Density of dry air, kg/m3
+real(wp)              :: dTdt             ! Change in temperature over time, K/s
+real(wp)              :: cbrl             ! Cubes in real format
 
+cbrl = REAL(Cubes)
 L = LatentHeatEvap(Tmp)
 rhoA = DensityAir(Tmp, Prs, RH)
-dTdt = -g*W/cp + (L/(cp*rhoA))*WetGrowthSums/((1e-2)**3) ! per cubic centimeter factor
+dTdt = -g*W/cp + (L/(cp*rhoA))*WetGrowthSums/(cbrl*1e-6_wp) ! per cubic centimeter factor
 
 end function TemperatureTime
 
@@ -89,33 +91,36 @@ end function TemperatureTime
 !*                                                                                      *
 !****************************************************************************************
 
-function SaturationTime(Tmp, Prs, RH, WetGrowthSums) result(dRHdt)
+pure elemental function SaturationTime(Tmp, Prs, RH, WetGrowthSums) result(dRHdt)
 
 use WaterFuncs, only: LatentHeatEvap, SatVapWater
 use AirFuncs, only: DensityAir
 
 implicit none
 
-real(dvode_wp), intent(in)  :: Tmp              ! Temperature, K
-real(dvode_wp), intent(in)  :: Prs              ! Pressure, Pa
-real(dvode_wp), intent(in)  :: RH               ! Relative humidity, -
-real(dvode_wp), intent(in)  :: WetGrowthSums    ! Sum of condensational growth rates (water vapor) of the droplets, dm/dt [kg/s]
-real(dvode_wp)              :: L                ! Latent heat of evaporation (of water vapor), J/kg
-real(dvode_wp)              :: es               ! Saturation vapor pressure of water, Pa
-real(dvode_wp)              :: rhoA             ! Density of dry air, kg/m3
-real(dvode_wp)              :: Q1, Q2           ! Adiabatic cooling and condensational growth terms respectively, -
-real(dvode_wp)              :: dRHdt            ! Change in ambient saturation ratio/relative humidity over time, 1/s
+real(wp), intent(in)  :: Tmp              ! Temperature, K
+real(wp), intent(in)  :: Prs              ! Pressure, Pa
+real(wp), intent(in)  :: RH               ! Relative humidity, -
+real(wp), intent(in)  :: WetGrowthSums    ! Sum of condensational growth rates (water vapor) of the droplets, dm/dt [kg/s]
+real(wp)              :: L                ! Latent heat of evaporation (of water vapor), J/kg
+real(wp)              :: es               ! Saturation vapor pressure of water, Pa
+real(wp)              :: rhoA             ! Density of dry air, kg/m3
+real(wp)              :: Q1, Q2           ! Adiabatic cooling and condensational growth terms respectively, -
+real(wp)              :: dRHdt            ! Change in ambient saturation ratio/relative humidity over time, 1/s
+real(wp)              :: cbrl             ! Cubes in real format
 
 es = SatVapWater(Tmp, 'liq')
 L = LatentHeatEvap(Tmp)
 rhoA = DensityAir(Tmp, Prs, RH)
 
-! For adiabatic cooling
-Q1 = (1/Tmp)*((L*g)/(Rv*Tmp*cp)) - g/(Rd*Tmp)
-! For condensation onto droplets
-Q2 = Prs/(eta*es) + (1/Tmp)*(L**2/(Rv*Tmp*cp))
+cbrl = REAL(Cubes)
 
-dRHdt = Q1*W - (Q2/rhoA)*WetGrowthSums/((1e-2)**3) ! per cubic centimeter factor
+! For adiabatic cooling
+Q1 = (1_wp/Tmp)*((L*g)/(Rv*Tmp*cp)) - g/(Rd*Tmp)
+! For condensation onto droplets
+Q2 = Prs/(eta*es) + (1_wp/Tmp)*(L**2/(Rv*Tmp*cp))
+
+dRHdt = Q1*W - (Q2/rhoA)*WetGrowthSums/(cbrl*1e-6_wp) ! per cubic centimeter factor
 
 end function SaturationTime
 
