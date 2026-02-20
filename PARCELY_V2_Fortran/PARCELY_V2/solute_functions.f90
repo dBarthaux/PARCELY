@@ -1,4 +1,4 @@
-﻿module SolFuncs
+module SolFuncs
 
 use dvode_kinds_module, only: wp => dvode_wp
 use EnvironmentConstants, only: pi, R, Na, R_alt, Mw, rhoL
@@ -45,6 +45,8 @@ DryRad = 1.0_wp
 seed = DistSeed
 call random_seed(put = seed)
 
+j = 0
+
 do i = 1, npops
     
     allocate(randnum(DistConcs(i)))
@@ -54,7 +56,8 @@ do i = 1, npops
         if (i == 1) then
             DryRad(1:DistConcs(i)) = DryRad(1:DistConcs(i))*DistRads(i)
         else
-            j = SUM(DistConcs(1:i-1))
+            !j = SUM(DistConcs(1:i-1))
+            j = j + DistConcs(i)
             DryRad(j+1:j+DistConcs(i)) = DryRad(j+1:j+DistConcs(i))*DistRads(i)
         endif
 
@@ -64,7 +67,8 @@ do i = 1, npops
             call NormDist(DistRads(i), DistStds(i), DistConcs(i), randnum)
             DryRad(1:DistConcs(i)) = randnum
         else
-            j = SUM(DistConcs(1:i-1))
+            !j = SUM(DistConcs(1:i-1))
+            j = j + DistConcs(i)
             call NormDist(DistRads(i), DistStds(i), DistConcs(i), randnum)
             DryRad(j+1:j+DistConcs(i)) = randnum
         endif
@@ -75,7 +79,8 @@ do i = 1, npops
             call LogNormDist(DistRads(i), DistStds(i), DistConcs(i), randnum)
             DryRad(1:DistConcs(i)) = randnum
         else
-            j = SUM(DistConcs(1:i-1))
+            !j = SUM(DistConcs(1:i-1))
+            j = j + DistConcs(i)
             call LogNormDist(DistRads(i), DistStds(i), DistConcs(i), randnum)
             DryRad(j+1:j+DistConcs(i)) = randnum
         endif
@@ -244,8 +249,8 @@ else
     InorganicHomes = 1_wp + Xi*(InorganicMoleFracs - 1_wp)
     InorganicAways = Xi*InorganicMoleFracs
     ! Assign the mole fraction of each inorganic in every droplet
-    do n = 1, ndrop
-        do i = 1, ninorg
+    do i = 1, ninorg
+        do n = 1, ndrop
             if (InorganicCounts(n) == i) then
                 SolMoleFracs(n,i) = InorganicHomes(i)
             else
@@ -257,8 +262,8 @@ else
     SolDensity = MATMUL(SolMoleFracs, InorganicDensities)
     SolMolarMass = MATMUL(SolMoleFracs, InorganicMolarMasses)
     ! Get the masses for each inorganic
-    do n = 1, ndrop
-        do i = 1, ninorg
+    do i = 1, ninorg
+        do n = 1, ndrop
             InorganicMasses(n,i) = (4_wp*pi/3_wp)*(SolMoleFracs(n,i)*InorganicDensities(i))*(DryRad(n)**3)
             ! Get volumes of each inorganic
             InorganicVolumes(n,i) = InorganicMasses(n,i)/InorganicDensities(i)
