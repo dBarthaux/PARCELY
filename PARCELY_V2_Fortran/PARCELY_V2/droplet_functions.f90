@@ -309,7 +309,6 @@ else if (Msft == 3) then
     InorgMoles = InorganicBase(:,1)/InorganicBase(:,3)
     ! Moles of organics
     do i = 1, norg
-        !DropMoles(:,i) = OrganicCond(:,i)*1e-9_wp/OrganicProperties(i,3)
          DropMoles(:,i) = OrganicCond(:,i)/Na
     end do
     ! Sum moles
@@ -334,7 +333,6 @@ else if (Msft == 4) then
     Vwater  = WaterMass/rhoL
     Vinorg  = InorganicBase(:,1)/InorganicBase(:,4)
     do i = 1, norg
-        !Vorganics(:,i) = OrganicCond(:,i)*1e-9_wp/OrganicProperties(i,4)
         Vorganics(:,i) = (OrganicProperties(i,3)*OrganicCond(:,i)/Na)/OrganicProperties(i,4)
     end do
     ! Determine if there's enough organics to cover the particle
@@ -364,3 +362,4 @@ end subroutine DropletSurfaceTension
 !==========================================================================================================================
 
 end module DropFuncs
+
