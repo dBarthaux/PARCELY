@@ -1,5 +1,5 @@
 # The PARCELY cloud parcel model
-PARCELY is a particle-resolved cloud parcel model that includes co-condensation of organic compounds and the formation of organic films around droplets.
+PARCELY is a particle-resolved cloud parcel model that includes co-condensation of organic compounds and the formation of organic films around droplets. Version 1 was written in Python and version 2 was translated to Fortran and updated. It is strongly recommended to only use version 2, as that is the current version (as of 2026) that is substantially improved in almost all aspects. Version 1 is kept in the repository for posterity and archival reasons, though also because it included a "sub-parcel" three-dimensional division that could roughly simulate a more DNS-like approach to parcel modelling. Version 2 does not contain any of that for the time being.
 
 # Installation
 ## Linux
