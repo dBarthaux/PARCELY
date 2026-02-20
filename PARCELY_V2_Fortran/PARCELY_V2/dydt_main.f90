@@ -32,7 +32,7 @@ RH   = y(neq)
 ydot = 0.0_wp
 
 if (INCLUDE_ORGANICS) then
-    yorgcond = RESHAPE(y(ndrop+1:neq-3-norg), [ndrop, norg])
+    yorgcond = RESHAPE(y(ndrop+1:neq-3-norg), shape(yorgcond))
     ! Gas-phase organic, molec/cm3
     OrganicGas = y(neq-3-norg+1:neq-3)
     ! Extract the masses of each organic
@@ -62,14 +62,13 @@ if ((INCLUDE_ORGANICS) .and. (INCLUDE_COCONDENSE)) then
     ydot(neq-3-norg+1:neq-3) = dOrgGasdt
 end if
 
-! Loop to calculate dr/dt of water, m/s
+! Calculate dr/dt of water, m/s
 do i = 1, ndrop
     ydot(i) = DropGrowthRate(Tmp, Prs, RH, WaterRad(i), SoluteProperties(i,2), SoluteProperties(i,5), DropSurfTens(i))
-    WetGrowthSums = WetGrowthSums + ydot(i)*4_wp*pi*rhoL*WaterRad(i)**2
-    ! ln rate
-    ydot(i) = ydot(i)/WaterRad(i)
 end do
-    
+WetGrowthSums = SUM(ydot(1:ndrop)*4_wp*pi*rhoL*WaterRad**2)
+ydot(1:ndrop) = ydot(1:ndrop)/WaterRad
+
 ! Compute atmospheric variable rates
 ydot(neq-2) = TemperatureTime(Tmp, Prs, RH, WetGrowthSums)
 ydot(neq-1) = PressureTime(Tmp, Prs, RH)
