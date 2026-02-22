@@ -2,23 +2,25 @@ Environment, Population, and Solver Input file for PARCELY_V2
 ====================================== 
 Value 			: Parameter Description
 -----   		---------------------------------
-1000.0e2 		: [Prs] Initial pressure, Pa
-284.3 			: [Tmp] Initial temperature, K
-0.96801 		: [RH] Initial RH, -
-1.0 			: [W] Updraft velocity, m/s
-0.2 			: [ac] Mass accommodation coefficient for kinetic effects, -
-0.2 			: [at] Thermal accommodation coefficient for kinetic effects, -
-200.0 			: [RunTime] Total model runtime, seconds
-1e-1 			: [dt] Timestep size for DVODE
-1 				: [DistType] Distribution type [1: monotonic, 2:normal, 3:lognormal]
-1				: [npops] Number of distributions
-100 			: [DistConcs] Number concentrations
-0.05 			: [DistRads] Mean radii, um
-0.0 			: [DistStds] Standard deviations, um
-0.00			: [Xi] Mixing state of aerosols, -
-.FALSE.			: [INCLUDE_ORGANICS] Toggle inclusion of cocondensation
-2				: [Msft] Droplet surface tension calculation method [1-constant/sftc, 2-Pure water T-depend, 3-Mixing ratio, 4-Organic film]
-0.072 			: [sftc] Constant surface tension, if Msft = 1
+123456789		: [DistSeed] Seed for the random number generator, integer (set to 0 for random)
+1				    : [Cubes] Size of the domain in cubic centimeters, integer
+90000			  : [Prs] Initial pressure, Pa
+293.15			: [Tmp] Initial temperature, K
+0.97			  : [RH] Initial RH, -
+0.3				  : [W] Updraft velocity, m/s
+0.2				  : [ac] Mass accommodation coefficient for kinetic effects, -
+0.2				  : [at] Thermal accommodation coefficient for kinetic effects, -
+300				  : [RunTime] Total model runtime, seconds
+1.00E-04		: [dt] Timestep size for DVODE
+1000			  : [ntsteps] (Maximum) Number of equally spaced timesteps to save
+3				    : [DistType] Distribution type [1: monotonic, 2:normal, 3:lognormal]
+1				    : [npops] Number of distributions
+300				  : [DistConcs] Number concentrations
+0.075			  : [DistRads] Mean radii, um
+1.7				  : [DistStds] Standard deviations, um
+1.0				  : [Xi] Mixing state of aerosols, -
+.TRUE.			: [INCLUDE_ORGANICS] Toggle inclusion of organics
+.TRUE.			: [INCLUDE_COCONDENSE] Toggle inclusion of co-condensation
 .TRUE.			: [INCLUDE_BAT] Toggle use of BAT to calculate activity coefficients of organics
---------------------------------------------------
-
+1				    : [Msft] Droplet surface tension calculation method [1-constant/sftc, 2-Pure water T-depend, 3-Mixing ratio, 4-Organic film]
+0.072			  : [sftc] Constant surface tension, if Msft = 1
