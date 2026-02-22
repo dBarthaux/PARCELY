@@ -44,10 +44,12 @@ Currently PARCELY does not have the option to mix multiple kinds of distribution
 
 12. **INCLUDE_COCONDENSE** - The flag to set whether the mass growth equations for organics are included in the solver. This is useful if one wants to test purely the effects of organic film formation without co-condensation.
 
-13. **Msft** - The mode of surface tension used in the simulation. (1) is a constant value (the value set in sftc, usually set to that of pure water), (2) is the temperature-dependent surface tension of pure water, (3) is a mole-fraction weighted average of water and organics, and (4) is the organic film method.
+13. **INCLUDE_BAT** - The flag to set whether activity coefficients are calculated using the Binary Activity Thermodynamics (BAT) model or assumed to be equal to 1 (only relevant if co-condensation is .TRUE.).
+
+14. **Msft** - The mode of surface tension used in the simulation. (1) is a constant value (the value set in sftc, usually set to that of pure water), (2) is the temperature-dependent surface tension of pure water, (3) is a mole-fraction weighted average of water and organics, and (4) is the organic film method.
 **Options (3) and (4) cannot work if INCLUDE_ORGANICS is set to .FALSE.!**
 
-14. **sftc** - The constant surface tension value to use if option 1 is selected in Msft.
+15. **sftc** - The constant surface tension value to use if option 1 is selected in Msft.
 
 ## Inorganic Input File
 The file "parcely_inorganic_input_file.txt" is the input file listing all of the "inorganic" compounds. It should be noted that while this file and the inputs are called "inorganics", they do not have to be limited to inorganics. One can use a surrogate organic compound as the inorganic - the only difference though is in the compound properties used.
@@ -69,4 +71,6 @@ The file "parcely_organic_input_file.txt" is the input file listing all of the "
 
 3. **C0, MolarMass, Density, Kappa, Sigma** - The pure-component values for the saturation concentration/volatility, molar mass, liquid density, kappa/hygroscopicity, and surface tension of the organic.
 
-4. **InitFrac** - The initial condensed **mass fraction** of the organic for each size distribution, separated by spaces. PARCELY will adjust the inorganic moles accordingly such that the radius of each particle is maintained after incorporating the organics. The sum of all the initial condensed mass fractions for all the organics must be less than 1 (to keep inorganic mass). If the total calculated condensed mass of the organic is larger than the user-inputted total concentration, the gas-phase concentration is set to essentially zero.
+4. **OtoC, HtoC, NtoC** - The oxygen, hydrogen, and nitrogen carbon ratios of the organics to be used in calculating the activity coefficients with the BAT model, if INCLUDE_BAT is set to .TRUE. If irrelevant, simplest just to leave as 1.0.
+
+5. **InitFrac** - The initial condensed **mass fraction** of the organic for each size distribution, separated by spaces. PARCELY will adjust the inorganic moles accordingly such that the radius of each particle is maintained after incorporating the organics. The sum of all the initial condensed mass fractions for all the organics must be less than 1 (to keep inorganic mass). If the total calculated condensed mass of the organic is larger than the user-inputted total concentration, the gas-phase concentration is set to essentially zero.
