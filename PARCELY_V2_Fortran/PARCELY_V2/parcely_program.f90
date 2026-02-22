@@ -12,6 +12,7 @@
 
 program PARCELY_V2
 
+use iso_fortran_env,        only: output_unit
 use dvode_module
 use dvode_kinds_module,     only: wp => dvode_wp
 use EnvironmentConstants,   only: pi, rhoL, Na, Mw
@@ -19,19 +20,22 @@ use InputReader,            only: EnvReader, InorganicReader, OrganicReader
 use DropFuncs,              only: EquilibriumRadius, KappaKoehler, DropGrowthRate, DropletSurfaceTension
 use SolFuncs,               only: SolPopInitialize
 use ODEquations,            only: parcelydydt
-use ModelParameters,        only: INCLUDE_ORGANICS, Cubes, ndrop, ninorg, norg, DropSurfTens, sftc, OrganicProperties, SoluteProperties
+use ModelParameters,        only: INCLUDE_ORGANICS, Cubes, ndrop, ninorg, norg, DropSurfTens, sftc, &
+                                  OrganicProperties, SoluteProperties
 
 implicit none
 
 type(dvode_t)               :: me
 integer, allocatable        :: DistConcs(:), iwork(:)
-real(wp), allocatable       :: DistRads(:), DistStds(:), InorganicProperties(:,:), EquilRad(:), y(:), rwork(:), rtol(:), atol(:), OrganicCond(:,:), OrganicGas(:)
+real(wp), allocatable       :: DistRads(:), DistStds(:), InorganicProperties(:,:), EquilRad(:), y(:), &
+                               rwork(:), rtol(:), atol(:), OrganicCond(:,:), OrganicGas(:)
 real(wp), allocatable       :: OrganicOutput(:,:,:), OrganicGasOutput(:,:)
 real(wp), allocatable       :: SaveData(:,:), SaveTimes(:), SaveSolutes(:,:,:), initmasswater(:)
 real(wp)                    :: Tmp, RH, Prs, x, t, dt, RunTime, tout, Xi, ntsteps
 integer                     :: npops, DistType, i, j, neq, istate, itask, iopt, mf, lrw, liw, itol, counter, Pts, ntint, DistSeed
 integer, allocatable        :: seed(:)
-character(50)               :: FormatString
+character(50)               :: FormatString, message
+character(1)                :: cr
 character(6), allocatable   :: OrganicNames(:)
 character(17+18)            :: filename
 
@@ -63,7 +67,8 @@ if (INCLUDE_ORGANICS) then
     ! Set initial phases of organic mass to something small, molecules
     OrganicCond = 1.0e-20_wp
     OrganicGas = 1.0e-20_wp
-    ! Determine number of equations for solver (# particles x # organics + water growth rate equations + # organics gas-phase + environment)
+    ! Determine number of equations for solver
+    ! (# particles x # organics + water growth rate equations + # organics gas-phase + environment)
     neq = ndrop*(norg+1) + norg + 3
 else
     ! No organics, simple case
@@ -158,6 +163,7 @@ SaveSolutes(:,6,1) = DropSurfTens
 call me%initialize(parcelydydt)
 
 print *, 'Starting integration...'
+cr = char(13)
 
 ! Not to start at 1 and overwrite initial conditions
 i = 2
@@ -179,11 +185,16 @@ do while (tout < RunTime)
         SaveSolutes(:,6,counter) = DropSurfTens
         ! Update counter
         counter = min(counter + 1, ntint+2)
-        print *, tout
+        !print *, tout
+        write(message, '(A, F6.2)') 't = ', tout
+        write(output_unit, '(A, A)', advance='no') cr // trim(message)
+        call flush(output_unit)
     end if
 
     i = i + 1
 end do
+
+print *, 'Integration complete.'
 
 if (INCLUDE_ORGANICS) then
     allocate(OrganicOutput(ndrop, norg, ntint+2), OrganicGasOutput(norg, ntint+2))
@@ -258,7 +269,6 @@ else
     close(18)
 end if
 
-print *, 'Integration complete.'
 print *, "Press ENTER to exit."
 read(*,*)
 
