@@ -2,7 +2,7 @@ module SolFuncs
 
 use dvode_kinds_module, only: wp => dvode_wp
 use EnvironmentConstants, only: pi, R, Na, R_alt, Mw, rhoL
-use ModelParameters, only: norg, ninorg, ndrop, OrganicProperties, InorganicBase, SoluteProperties, DropSurfTens, Cubes
+use ModelParameters, only: norg, ninorg, ndrop, OrganicProperties, InorganicBase, SoluteProperties, DropSurfTens, Cubes, INCLUDE_BAT
 
 contains
 
@@ -27,16 +27,16 @@ use DistFuncs, only: NormDist, LogNormDist
 
 implicit none
 
-integer, intent(in)                             :: npops        ! Number of different distributions
-integer, intent(in)                             :: DistSeed     ! Seed for random number generation
-integer, dimension(npops), intent(in)           :: DistConcs    ! Number concentration of each distribution
-real(wp), dimension(npops), intent(in)          :: DistRads     ! Distribution means in um
-real(wp), dimension(npops), intent(in)          :: DistStds     ! Distribution standard deviations in um
-integer, intent(in)                             :: DistType     ! Type of distribution used [1: monodispersed, 2:normal, 3:log-normal]
-real(wp), allocatable                           :: DryRad(:)    ! Dry/solute/aerosol radii, m
-real(wp), allocatable                           :: randnum(:)
-integer                                         :: i, j
-integer, allocatable                            :: seed(:)
+integer, intent(in)                         :: npops        ! Number of different distributions
+integer, intent(in)                         :: DistSeed     ! Seed for random number generation
+integer, dimension(npops), intent(in)       :: DistConcs    ! Number concentration of each distribution
+real(wp), dimension(npops), intent(in)      :: DistRads     ! Distribution means in um
+real(wp), dimension(npops), intent(in)      :: DistStds     ! Distribution standard deviations in um
+integer, intent(in)                         :: DistType     ! Type of distribution used [1: monodispersed, 2:normal, 3:log-normal]
+real(wp), allocatable                       :: DryRad(:)    ! Dry/solute/aerosol radii, m
+real(wp), allocatable                       :: randnum(:)
+integer                                     :: i, j
+integer, allocatable                        :: seed(:)
 
 allocate(DryRad(SUM(DistConcs)), seed(SUM(DistConcs)))
 DryRad = 1.0_wp
@@ -115,7 +115,7 @@ real(wp), dimension(2+norg)             :: NewState
 ! Assign names for ease
 Mo = OrganicProperties(:,3)
 rhoo = OrganicProperties(:,4)
-wo = OrganicProperties(:,6+j)
+wo = OrganicProperties(:,9+j)
 ! Get the initial inorganic mass fraction
 wi = 1.0_wp - SUM(wo)
 
@@ -178,28 +178,31 @@ use ModelParameters, only: INCLUDE_ORGANICS
 
 implicit none
 
-integer, intent(in)                                     :: npops                ! Number of aerosol populations (different size distributions)
-real(wp), intent(in)                                    :: Xi                   ! Mixing state
-integer, dimension(npops), intent(in)                   :: DistConcs            ! Number concentration of each distribution
-real(wp), dimension(ndrop), intent(in)                  :: DryRad               ! Dry/solute/aerosol radii, m
-real(wp), dimension(ninorg, npops+3), intent(in)        :: InorganicProperties
-integer, intent(in)                                     :: DistSeed             ! Seed for random number generation
-real(wp), dimension(ndrop, norg), intent(inout)         :: OrganicCond
-real(wp), dimension(norg), intent(inout)                :: OrganicGas
+integer, intent(in)                                 :: npops    ! Number of aerosol populations (different size distributions)
+real(wp), intent(in)                                :: Xi                   ! Mixing state
+integer, dimension(npops), intent(in)               :: DistConcs            ! Number concentration of each distribution
+real(wp), dimension(ndrop), intent(in)              :: DryRad               ! Dry/solute/aerosol radii, m
+real(wp), dimension(ninorg, npops+3), intent(in)    :: InorganicProperties
+integer, intent(in)                                 :: DistSeed             ! Seed for random number generation
+real(wp), dimension(ndrop, norg), intent(inout)     :: OrganicCond
+real(wp), dimension(norg), intent(inout)            :: OrganicGas
 
-integer                                                 :: i, n, j, NumPop
-real(wp)                                                :: TotalMoles, wi
-real(wp), allocatable                                   :: SolKappa(:), SolDensity(:), SolMolarMass(:), InorganicCounts(:), SolMass(:), SolMoles(:), TotalVolume(:)
-real(wp), allocatable                                   :: InorganicHomes(:), InorganicAways(:), InorganicMoles(:), InorganicPopFracs(:)
-real(wp), allocatable                                   :: InorganicVolumes(:,:), InorganicVolFracs(:,:), InorganicMasses(:,:), InorganicMoleFracs(:), SolMoleFracs(:,:)
-real(wp), allocatable                                   :: OrganicAdjustment(:,:), TotalOrganics(:)
-real(wp), dimension(ninorg)                             :: InorganicKappas, InorganicDensities, InorganicMolarMasses
-real(wp), dimension(ninorg, npops)                      :: InorganicFractions
-character(len=20)                                       :: seedstring
+integer                                             :: i, n, j, NumPop
+real(wp)                                            :: TotalMoles, wi
+real(wp), allocatable                               :: SolKappa(:), SolDensity(:), SolMolarMass(:), InorganicCounts(:),&
+                                                       SolMass(:), SolMoles(:), TotalVolume(:)
+real(wp), allocatable                               :: InorganicHomes(:), InorganicAways(:), InorganicMoles(:), InorganicPopFracs(:)
+real(wp), allocatable                               :: InorganicVolumes(:,:), InorganicVolFracs(:,:), InorganicMasses(:,:),&
+                                                       InorganicMoleFracs(:), SolMoleFracs(:,:)
+real(wp), allocatable                               :: OrganicAdjustment(:,:), TotalOrganics(:)
+real(wp), dimension(ninorg)                         :: InorganicKappas, InorganicDensities, InorganicMolarMasses
+real(wp), dimension(ninorg, npops)                  :: InorganicFractions
+character(len=20)                                   :: seedstring
 
-allocate(SolKappa(ndrop), SolDensity(ndrop), SolMolarMass(ndrop), InorganicCounts(ndrop), SolMass(ndrop), SolMoles(ndrop), TotalVolume(ndrop), &
-         InorganicHomes(ninorg), InorganicAways(ninorg), InorganicMoles(ninorg), InorganicPopFracs(ninorg), InorganicMoleFracs(ninorg), & 
-         InorganicVolumes(ndrop,ninorg), InorganicVolFracs(ndrop,ninorg), InorganicMasses(ndrop,ninorg), SolMoleFracs(ndrop,ninorg))
+allocate(SolKappa(ndrop), SolDensity(ndrop), SolMolarMass(ndrop), InorganicCounts(ndrop), SolMass(ndrop), SolMoles(ndrop),&
+ TotalVolume(ndrop), InorganicHomes(ninorg), InorganicAways(ninorg), InorganicMoles(ninorg), InorganicPopFracs(ninorg), &
+ InorganicMoleFracs(ninorg), InorganicVolumes(ndrop,ninorg), InorganicVolFracs(ndrop,ninorg), InorganicMasses(ndrop,ninorg),&
+ SolMoleFracs(ndrop,ninorg))
 
 InorganicMolarMasses    = InorganicProperties(:,1)
 InorganicDensities      = InorganicProperties(:,2)
@@ -214,7 +217,8 @@ do i = 1, SIZE(DistConcs)
     do j = 1, ninorg
         ! Get the number of particles of inorganic "j" in distribution "i" using its fraction of total particles in distribution "i"
         NumPop = NINT(InorganicFractions(j,i)*DistConcs(i))
-        ! In cases where the inorganic fractions do not match the total number of particles (e.g., two inorganics both 50% of an odd number)
+        ! In cases where the inorganic fractions do not match the total number of particles
+        ! (e.g., two inorganics both 50% of an odd number)
         if (n+NumPop-1 > ndrop) then
             NumPop = ndrop - (n - 1)
         end if
@@ -377,7 +381,8 @@ end subroutine InitialSoluteProperties
 !*                                                                                      *
 !****************************************************************************************
 
-subroutine SolPopInitialize(npops, DistType, DistConcs, DistRads, DistStds, Xi, InorganicProperties, OrganicCond, OrganicGas, DistSeed)
+subroutine SolPopInitialize(npops, DistType, DistConcs, DistRads, DistStds, Xi, InorganicProperties,&
+                             OrganicCond, OrganicGas, DistSeed)
 
 implicit none
 
@@ -426,7 +431,8 @@ implicit none
 real(wp), dimension(ndrop, norg), intent(in)    :: OrganicCond
 real(wp), dimension(ndrop, norg)                :: OrgUg
 integer                                         :: i, j
-real(wp), dimension(ndrop)                      :: InorganicMoles, InorganicVolumes, InorganicMoleFrac, InorganicVolFrac, TotalMoles, TotalVolume
+real(wp), dimension(ndrop)                      :: InorganicMoles, InorganicVolumes, InorganicMoleFrac,&
+                                                   InorganicVolFrac, TotalMoles, TotalVolume
 real(wp), dimension(ndrop, norg)                :: OrganicMoles, OrganicMoleFrac, OrganicVolumes, OrganicVolFrac
 
 ! Update solute mass
@@ -492,6 +498,8 @@ end subroutine SoluteUpdate
 
 subroutine Cocondense(OrganicCond, OrganicGas, WaterMass, WaterRad, Tmp, dOrgConddt, dOrgGasdt)
 
+use BATModel, only: BAT_properties_calculation_v1
+
 implicit none
 
 real(wp), dimension(ndrop, norg), intent(in)    :: OrganicCond
@@ -501,15 +509,17 @@ real(wp), intent(in)                            :: Tmp                  ! Ambien
 real(wp), dimension(ndrop, norg), intent(out)   :: dOrgConddt
 real(wp), dimension(norg), intent(out)          :: dOrgGasdt
 integer                                         :: i, j
-real(wp), allocatable                           :: KelFactor(:,:), EquiPress(:,:), Csurf(:,:), MoleFracs(:,:), C0tadj(:), &
-                                                   DiffOrgs(:), Psat(:), DelH(:), ThermVel(:), FreePath(:), Knudsen(:,:), &
-                                                   KnudInverse(:,:), Corr1(:,:), Corr2(:,:), Corr3(:,:), Correction(:,:), &
-                                                   InorgMolec(:), TotalSolMolec(:), WaterMolec(:), DropMw(:), DropDensity(:)
+real(wp), allocatable                           :: KelFactor(:,:), EquiPress(:,:), Csurf(:,:), MoleFracs(:,:), &
+                                                   Knudsen(:,:), KnudInverse(:,:), Corr1(:,:), Corr2(:,:), &
+                                                   Corr3(:,:), Correction(:,:), ActCoeffs(:,:)
+real(wp), dimension(norg)                       :: C0tadj, DiffOrgs, Psat, DelH, Mw_Ratio, FreePath, ThermVel, &
+                                                   mole_tmp, act_tmp
+real(wp), dimension(ndrop)                      :: InorgMolec, TotalSolMolec, WaterMolec
+character(4), dimension(norg)                   :: BAT_functional_group
 
-allocate(KelFactor(ndrop, norg), EquiPress(ndrop, norg), Csurf(ndrop, norg), MoleFracs(ndrop, norg+2), C0tadj(norg), DiffOrgs(norg), &
-        Psat(norg), DelH(norg), ThermVel(ndrop), FreePath(norg), Knudsen(ndrop, norg), KnudInverse(ndrop, norg), Corr1(ndrop, norg), &
-        Corr2(ndrop, norg), Corr3(ndrop, norg), Correction(ndrop, norg), InorgMolec(ndrop), TotalSolMolec(ndrop), &
-        DropMw(ndrop), DropDensity(ndrop))
+allocate(KelFactor(ndrop, norg), EquiPress(ndrop, norg), Csurf(ndrop, norg), MoleFracs(ndrop, norg+2), &
+         Knudsen(ndrop, norg), KnudInverse(ndrop, norg), Corr1(ndrop, norg), Corr2(ndrop, norg), &
+         Corr3(ndrop, norg), Correction(ndrop, norg), ActCoeffs(ndrop, norg))
 
 ! Number of molecules in inorganic phase
 InorgMolec = Na*InorganicBase(:,1)/InorganicBase(:,3)
@@ -548,12 +558,25 @@ C0tadj = OrganicProperties(:,2)*(298.15_wp/Tmp)*EXP(-(DelH/R)*(1.0_wp/Tmp - 1.0_
 ! Convert C0 to a pure component saturation vapour pressure [atm]
 Psat = (C0tadj*R*Tmp)/(101325.0_wp*OrganicProperties(:,3)*1.0e9_wp)
 
+! Activity coefficients
+ActCoeffs = 1.0_wp
+BAT_functional_group = 'none'
+Mw_Ratio = Mw/OrganicProperties(:,3)
+if (INCLUDE_BAT) then
+    do i = 1, ndrop
+        mole_tmp = MoleFracs(i,1:norg)
+        call BAT_properties_calculation_v1(mole_tmp, OrganicProperties(:,7), OrganicProperties(:,8), &
+                                        Mw_Ratio, BAT_functional_group, OrganicProperties(:,9), act_tmp)
+        ActCoeffs(i,:) = act_tmp
+    end do
+end if
+
 ! Equilibrium pressure for each organic
 do i = 1, norg
     ! Kelvin effect
     KelFactor(:,i) = EXP(2.0_wp*DropSurfTens*OrganicProperties(i,3)/(R*Tmp*WaterRad*OrganicProperties(i,4)))
     ! Equilibrium pressure in atm
-    EquiPress(:,i) = MoleFracs(:,i)*Psat(i)*KelFactor(:,i)*1.0_wp ! 1 = activity coefficient
+    EquiPress(:,i) = MoleFracs(:,i)*Psat(i)*KelFactor(:,i)*ActCoeffs(:,i)
     ! Equilibrium concentration at particle surface in molec/cm^3
     Csurf(:,i) = EquiPress(:,i)*(Na/(R_alt*1.0e6_wp*Tmp))
     ! Mass transfer
