@@ -1,7 +1,17 @@
 Organic Compounds Input file for PARCELY_V2
 ====================================== 
-Name, Total, C0, MolarMass, Density, Kappa, Sigma
-ORGAN1 1 1e9 16.04 0.657 0.001, 30
+Name, Total, C0, MolarMass, Density, Kappa, Sigma, OtoC, HtoC, NtoC, InitFrac
+ORGA01 0.107831325 1e-6 200.0 1400 0.1 40 1.0 1.5 -1.0 0.0
+ORGA02 0.106927711 1e-5 200.0 1400 0.1 40 0.8 1.6 -1.0 0.0
+ORGA03 0.106927711 1e-4 200.0 1400 0.1 40 0.7 1.7 -1.0 0.0
+ORGA04 0.110542169 1e-3 200.0 1400 0.1 40 0.6 1.8 -1.0 0.0
+ORGA05 0.114156627 1e-2 200.0 1400 0.1 40 0.5 1.9 -1.0 0.0
+ORGA06 0.115963855 1e-1 200.0 1400 0.1 40 0.4 1.5 -1.0 0.0
+ORGA07 0.144879518 1e-0 200.0 1400 0.1 40 0.3 1.6 -1.0 0.0
+ORGA08 0.233433735 1e+1 200.0 1400 0.1 40 0.2 1.7 -1.0 0.0
+ORGA09 0.466566265 1e+2 200.0 1400 0.1 40 0.1 1.8 -1.0 0.0
+ORGA10 1.171385542 1e+3 200.0 1400 0.1 40 0.0 1.9 -1.0 0.0
+ORGA11 1.000000000 1e-9 200.0 1400 0.01 40 1.0 1.5 -1.0 0.8
 
 *--------------------------------------------------
 
@@ -12,5 +22,7 @@ Total is the total concentration of the organic in ug/m3
 C0 is the pure-component saturation concentration, in ug/m3
 MolarMass is in g/mol
 Density (liquid) is in kg/m3
-Kappa is unitless
+Kappa (hygroscopicity) is unitless
 Sigma is the pure-component surface tension in mJ/m2
+OtoC, HtoC, and NtoC are the ratios of oxygen, hydrogen, and nitrogen to carbon (negative value mean ignore)
+InitFrac is the average initial mass fraction of the organic in the particle phase for each population (must match npops)
