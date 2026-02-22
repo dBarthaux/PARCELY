@@ -12,7 +12,8 @@ use DropFuncs,              only: DropGrowthRate, DropletSurfaceTension
 use EnvEquations,           only: PressureTime, TemperatureTime, SaturationTime
 use SolFuncs,               only: SoluteUpdate, Cocondense
 use EnvironmentConstants,   only: Na, Mw, pi, rhoL
-use ModelParameters,        only: INCLUDE_ORGANICS, INCLUDE_COCONDENSE, SoluteProperties, ndrop, norg, DropSurfTens, OrganicProperties
+use ModelParameters,        only: INCLUDE_ORGANICS, INCLUDE_COCONDENSE, SoluteProperties, ndrop, &
+                                  norg, DropSurfTens, OrganicProperties
 
 implicit none
 
@@ -20,9 +21,11 @@ class(dvode_t), intent(inout)       :: me       ! Solver instance
 integer                             :: i, neq   !-, Number of equations
 real(wp)                            :: t, y(neq), ydot(neq), Tmp, Prs, RH, WetGrowthSums
 real(wp), dimension(ndrop)          :: WaterMass
-real(wp), allocatable               :: yorgcond(:,:), OrganicGas(:), OrganicCond(:,:), dOrgConddt(:,:), dOrgGasdt(:), WaterRad(:), OriginalGas(:)
+real(wp), allocatable               :: yorgcond(:,:), OrganicGas(:), OrganicCond(:,:), dOrgConddt(:,:), &
+                                       dOrgGasdt(:), WaterRad(:), OriginalGas(:)
 
-allocate(yorgcond(ndrop,norg), OrganicGas(norg), OrganicCond(ndrop,norg), dOrgConddt(ndrop,norg), dOrgGasdt(norg), WaterRad(ndrop), OriginalGas(norg))
+allocate(yorgcond(ndrop,norg), OrganicGas(norg), OrganicCond(ndrop,norg), dOrgConddt(ndrop,norg), &
+        dOrgGasdt(norg), WaterRad(ndrop), OriginalGas(norg))
 
 ! Last 3 entries are temperature, pressure, and RH
 Tmp  = y(neq-2)
