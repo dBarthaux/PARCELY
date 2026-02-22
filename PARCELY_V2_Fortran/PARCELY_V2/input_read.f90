@@ -1,7 +1,7 @@
 module InputReader
 
 use dvode_kinds_module, only: wp => dvode_wp
-use ModelParameters, only: Cubes, W, ac, at, sftc, Msft, OrganicProperties, INCLUDE_ORGANICS, INCLUDE_COCONDENSE
+use ModelParameters, only: Cubes, W, ac, at, sftc, Msft, OrganicProperties, INCLUDE_ORGANICS, INCLUDE_COCONDENSE, INCLUDE_BAT
 
 contains
 
@@ -80,6 +80,8 @@ do
         read(line, *) INCLUDE_ORGANICS
     else if (index(line, '[INCLUDE_COCONDENSE]') > 0) then
         read(line, *) INCLUDE_COCONDENSE
+    else if (index(line, '[INCLUDE_BAT]') > 0) then
+        read(line, *) INCLUDE_BAT
     end if
 end do
 
@@ -190,7 +192,7 @@ do
 end do
 close(11)
 
-allocate(OrganicProperties(norg, 6+npops))
+allocate(OrganicProperties(norg, 9+npops))
 allocate(OrganicNames(norg))
 
 open(unit=11, file="parcely_organic_input_file.txt", status="old", action="read")
@@ -204,7 +206,8 @@ do
     ! Total concentration (ug/m^3), C0 (ug/m^3), Molar mass (g/mol), Density (kg/m^3), Kappa, Surface tension (mJ/m^2), Initial average particle mass fraction
     read(line, *, iostat=ios) OrganicNames(i), OrganicProperties(i,1), OrganicProperties(i,2), OrganicProperties(i,3), & 
                                     OrganicProperties(i,4), OrganicProperties(i,5), OrganicProperties(i,6), &
-                                    (OrganicProperties(i, j+6), j=1,npops)
+                                    OrganicProperties(i,7), OrganicProperties(i,8), OrganicProperties(i,9), &
+                                    (OrganicProperties(i, j+9), j=1,npops)
     i = i + 1
 end do
 
