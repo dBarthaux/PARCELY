@@ -19,4 +19,6 @@ Value 			: Parameter Description
 .FALSE.			: [INCLUDE_ORGANICS] Toggle inclusion of cocondensation
 2				: [Msft] Droplet surface tension calculation method [1-constant/sftc, 2-Pure water T-depend, 3-Mixing ratio, 4-Organic film]
 0.072 			: [sftc] Constant surface tension, if Msft = 1
+.TRUE.			: [INCLUDE_BAT] Toggle use of BAT to calculate activity coefficients of organics
 --------------------------------------------------
+
