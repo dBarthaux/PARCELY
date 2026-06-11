@@ -27,11 +27,11 @@ The seed used will be printed in the "inorganics_output.txt" file in the header 
 4. **W, ac, at** - Constant values for the updraft velocity, mass accommodation coefficient, and thermal accommodation coefficient. The latter pair are used in the KineticEffects subroutine (droplet_functions.f90), and the former in the equations
 for temperature and relative humidity (env_equations.f90).
 
-5. **RunTime, dt** - The total model runtime in seconds and the timestep size used for each call of the ODE.
+5. **RunTime, dt** - The total model runtime and the timestep size (both in seconds) used for each call of the ODE.
 
-6. **ntsteps** - The number of equally spaced timesteps to save and output to the files. This should be equal or larger than dt, the timestep size.
+6. **ntsteps** - The number of equally spaced timesteps to save and output to the files. This must be chosen logically in accordance with RunTime and dt.
 
-7. **DistType** - The distribution type used for all the aerosol size distribution. (1) is monotonic distributions (all particles have the same dry radius), (2) is normal distributions, and (3) is log-normal distributions.
+7. **DistType** - The distribution type used for the full aerosol size distribution. (1) is all monotonic distributions (all particles have the same dry radius), (2) is normal distributions, and (3) is log-normal distributions.
 Currently PARCELY does not have the option to mix multiple kinds of distributions, so all distributions must be of the same kind (e.g., you cannot have one population of monotonic and one of log-normal).
 
 8. **npops** -  The number of individual size distributions. For example, if one is simulating a total particle population that is defined by a mix of three distinct distributions, npops is 3. **This must match the inorganic input file entries** (see next section).
@@ -52,13 +52,13 @@ Currently PARCELY does not have the option to mix multiple kinds of distribution
 15. **sftc** - The constant surface tension value to use if option 1 is selected in Msft.
 
 ## Inorganic Input File
-The file "parcely_inorganic_input_file.txt" is the input file listing all of the "inorganic" compounds. It should be noted that while this file and the inputs are called "inorganics", they do not have to be limited to inorganics. One can use a surrogate organic compound as the inorganic - the only difference though is in the compound properties used.
+The file "parcely_inorganic_input_file.txt" is the input file listing all of the "inorganic" compounds. It should be noted that while this file and the inputs are called "inorganics", they do not have to be limited to inorganics. One can use a surrogate organic compound as the inorganic - the only difference is in the compound properties used.
 
 1. **Name** - The name of the inorganic. This is mostly irrelevant in the code itself and primarily for user input clarity. It must only be 6 characters long.
 
-2. **PopFractions** - The fraction of each size distribution attributed to this inorganic, separated by spaces. **This must match npops in the environment file.** As an example, if two size distributions of 100 particles have been set (npops = 2) and you have two inorganic compounds where one has 75 particles in the first distribution and 25 particles in the second distribution, and the second is identical but reversed, the input would be:
+2. **PopFractions** - The fraction of each size distribution attributed to this inorganic, separated by spaces. **This must match npops in the environment file.** As an example, if two size distributions of 100 particles have been set (npops = 2) and you have two inorganic compounds where INORG1 has 75 particles in the first distribution and 25 particles in the second distribution, and INORG2 has 40 in the first distribution and 60 in the second, the input would be:
 INORG1 0.75 0.25 ...
-INORG2 0.25 0.75 ...
+INORG2 0.40 0.60 ...
 
 3. **MolarMass, Density, Kappa** - The molar mass, liquid density, and kappa/hygroscopicity values associated with that inorganic.
 
@@ -71,6 +71,6 @@ The file "parcely_organic_input_file.txt" is the input file listing all of the "
 
 3. **C0, MolarMass, Density, Kappa, Sigma** - The pure-component values for the saturation concentration/volatility, molar mass, liquid density, kappa/hygroscopicity, and surface tension of the organic.
 
-4. **OtoC, HtoC, NtoC** - The oxygen, hydrogen, and nitrogen carbon ratios of the organics to be used in calculating the activity coefficients with the BAT model, if INCLUDE_BAT is set to .TRUE. If irrelevant, simplest just to leave as 1.0.
+4. **OtoC, HtoC, NtoC** - The oxygen, hydrogen, and nitrogen carbon ratios of the organics to be used in calculating the activity coefficients with the BAT model, if INCLUDE_BAT is set to .TRUE. If irrelevant, you can simply leave it as 1.0.
 
 5. **InitFrac** - The initial condensed **mass fraction** of the organic for each size distribution, separated by spaces. PARCELY will adjust the inorganic moles accordingly such that the radius of each particle is maintained after incorporating the organics. The sum of all the initial condensed mass fractions for all the organics must be less than 1 (to keep inorganic mass). If the total calculated condensed mass of the organic is larger than the user-inputted total concentration, the gas-phase concentration is set to essentially zero.
