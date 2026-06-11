@@ -14,7 +14,7 @@ No installation guide has been made yet for Windows, however in the meantime one
 To run PARCELY, one only needs to launch the executable. All options and flags are read from the editable .txt files. The output files are stored in the subfolder "PARCELY_Output", also as .txt files.
 
 ## Environment Input File
-The file "parcely_inorganic_input_file.txt" contains all the input variables and options that specify information on the parcel evironment, run-time options, aerosol size distribution, and organic options.
+The file "parcely_env_input_file.txt" contains all the input variables and options that specify information on the parcel evironment, run-time options, aerosol size distribution, and organic options.
 
 1. **DistSeed** - A seed for the pseudo-random generator from which the aerosol size distribution is sampled. It is not guaranteed that the same seed will work across different machines owing to differences in
 compilers or other software, but they will recreate the same distribution on the same computer. If the seed is set to 0, the seed itself will be randomly generated (useful for performing many runs with different seeds).
