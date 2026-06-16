@@ -41,13 +41,20 @@ def ReadPARCELY(Path):
     
     SolData = []
     for name in SolPropNames:
-        SolProperty = open(Path+f'{name}_output.txt').read().splitlines()[1:]
-        for i, ival in enumerate(SolProperty):
-            SolProperty[i] = ival.split()
-        SolProperty = np.array(SolProperty, dtype=float)
-        SolData.append(SolProperty)
+        try:
+            SolProperty = open(Path+f'{name}_output.txt').read().splitlines()[1:]
+            for i, ival in enumerate(SolProperty):
+                SolProperty[i] = ival.split()
+            SolProperty = np.array(SolProperty, dtype=float)
+            SolData.append(SolProperty)
+        except:
+            print(f'File {name} not found.')
+            SolData.append([])
     
-    SolData = np.array(SolData)
+    try:
+        SolData = np.array(SolData)
+    except:
+        pass
     
     Used = SolPropNames + ['environment', 'inorganics', 'droplet']
     
@@ -59,8 +66,15 @@ def ReadPARCELY(Path):
         Organic = open(Path+org).read().splitlines()[1:]
         for i, ival in enumerate(Organic):
             Organic[i] = ival.split()
-        OrgData[org] = np.array(Organic, dtype=float)
-        # OrgData[org][:,1:] = OrgData[org][:,1:]
+            
+        try:
+            OrgData[org] = np.array(Organic, dtype=float)
+        except:
+            for line in Organic:
+                for v, val in enumerate(line):
+                    if 'E' not in val:
+                        line[v] = '0.000000E-00'
+            OrgData[org] = np.array(Organic, dtype=float)
     
     Output = {'Env':EnvFile, 'Inorg':Inorganics, 'Drop':DropRadius,
               'Sol':SolData, 'Org':OrgData, 'Act':ActRez}
